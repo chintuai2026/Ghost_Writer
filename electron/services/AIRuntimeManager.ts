@@ -14,7 +14,7 @@ export class AIRuntimeManager {
 
     // The remote URL where the pre-packaged zip file containing the missing node_modules is hosted.
     // The user should upload a zip file named "ai-runtime.zip" to their GitHub releases.
-    private readonly RUNTIME_ZIP_URL = "https://github.com/Sasidhar-7302/Ghost_Writer/releases/download/v2.1.0/ai-runtime.zip";
+    private readonly RUNTIME_ZIP_URL = "https://github.com/chintuai2026/Ghost_Writer/releases/download/v2.1.0/ai-runtime.zip";
 
     private constructor() {
         this.runtimeDir = path.join(app.getPath('userData'), 'ai-runtime');
