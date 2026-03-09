@@ -4,6 +4,7 @@ import { Anthropic } from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import Groq from "groq-sdk";
 import fs from "fs";
+import path from "path";
 
 import { GeminiProvider } from "./llm/providers/GeminiProvider";
 import { OllamaProvider } from "./llm/providers/OllamaProvider";
@@ -11,12 +12,14 @@ import { OpenAICompatProvider } from "./llm/providers/OpenAICompatProvider";
 import { ClaudeProvider } from "./llm/providers/ClaudeProvider";
 import { GroqProvider } from "./llm/providers/GroqProvider";
 import { CustomCurlProvider } from "./llm/providers/CustomCurlProvider";
+import { ILLMProvider, ChatPayload } from "./llm/providers/ILLMProvider";
 
 import { extractFromCommonFormats } from "./llm/providers/CustomCurlProvider";
 
 import { CustomProvider } from "./types/customProviders";
 import { GPUHelper, GPUInfo } from "./utils/GPUHelper";
 import { CostTracker } from "./utils/costTracker";
+import { MultimodalHelper } from "./utils/MultimodalHelper";
 
 import {
   UNIVERSAL_SYSTEM_PROMPT,
@@ -39,6 +42,11 @@ const GROQ_MODEL = "llama-3.3-70b-versatile";
 // Let the provider handle its own config, orchestrator shouldn't hardcode if possible
 // We keep it for the OpenAI/Claude instances for now
 const MAX_OUTPUT_TOKENS = 8192;
+
+type PreparedChatPayload = {
+  payload: ChatPayload;
+  cleanupPaths: string[];
+};
 
 export class LLMHelper extends EventEmitter {
   private apiKey: string = ""
@@ -183,19 +191,20 @@ export class LLMHelper extends EventEmitter {
 
   public setAirGapMode(enabled: boolean): void {
     this.airGapMode = enabled;
-    console.log(`[LLMHelper] Air gap mode set to: ${enabled}`);
+    if (enabled && !this.useOllama) {
+      this.useOllama = true;
+      console.log("[LLMHelper] Air-Gap enabled: Switched to Ollama automatically");
+    }
   }
 
   public setModel(modelId: string, customProviders: CustomProvider[] = []): void {
-    let airGapMode = false;
-    try {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      airGapMode = CredentialsManager.getInstance().getAirGapMode();
-    } catch (e) { }
+    const isLocalOllama = modelId.startsWith("ollama:");
 
-    if (airGapMode && !modelId.startsWith('ollama-')) {
-      console.warn(`[LLMHelper] Air-Gap Mode is ON. Refusing to set cloud model: ${modelId}`);
-      modelId = `ollama-${this.ollamaModel}`;
+    // Strict Air-Gap Enforcement
+    if (this.airGapMode && !isLocalOllama) {
+      console.warn(`[LLMHelper] Blocked non-Ollama model switch due to Air-Gap Mode: ${modelId}`);
+      this.useOllama = true;
+      return;
     }
 
     let targetModelId = modelId;
@@ -212,6 +221,7 @@ export class LLMHelper extends EventEmitter {
       this.ollamaModel = targetModelId.replace('ollama-', '');
       this.customProvider = null;
       console.log(`[LLMHelper] Switched to Ollama: ${this.ollamaModel}`);
+      this.preloadModel(this.ollamaModel);
       return;
     }
 
@@ -231,10 +241,6 @@ export class LLMHelper extends EventEmitter {
     if (targetModelId === GEMINI_FLASH_MODEL) this.geminiModel = GEMINI_FLASH_MODEL;
 
     console.log(`[LLMHelper] Switched to Cloud Model: ${targetModelId}`);
-
-    if (this.useOllama) {
-      this.preloadModel(this.ollamaModel);
-    }
   }
 
   // ─── MODEL MANAGEMENT ─────────────────────────────────────────────
@@ -326,6 +332,108 @@ export class LLMHelper extends EventEmitter {
     ]);
   }
 
+  private buildProviderPayload(
+    payload: ChatPayload,
+    defaultSystemPrompt?: string,
+    overrides: Partial<ChatPayload> = {}
+  ): ChatPayload {
+    const merged: ChatPayload = {
+      ...payload,
+      ...overrides,
+    };
+
+    merged.systemPrompt = payload.options?.skipSystemPrompt
+      ? undefined
+      : (overrides.systemPrompt ?? payload.systemPrompt ?? defaultSystemPrompt);
+
+    return merged;
+  }
+
+  private buildCustomPayload(payload: ChatPayload): ChatPayload {
+    const basePayload = this.buildProviderPayload(payload, HARD_SYSTEM_PROMPT);
+    return {
+      ...basePayload,
+      systemPrompt: basePayload.systemPrompt
+        ? this.mapToCustomPrompt(basePayload.systemPrompt)
+        : undefined,
+    };
+  }
+
+  private appendContextNote(context: string | undefined, note: string): string {
+    return context ? `${context}\n\n${note}` : note;
+  }
+
+  private buildMessageWithOCR(message: string, ocrText?: string): string {
+    const normalizedOCR = ocrText?.trim();
+    if (!normalizedOCR) {
+      return message;
+    }
+
+    return `${message}\n\nSCREENSHOT OCR:\n${normalizedOCR}`;
+  }
+
+  private async preparePayload(payload: ChatPayload): Promise<PreparedChatPayload> {
+    const normalizedPayload: ChatPayload = {
+      ...payload,
+      message: payload.message,
+      context: payload.context,
+      systemPrompt: payload.systemPrompt,
+    };
+
+    if (!payload.imagePath) {
+      return { payload: normalizedPayload, cleanupPaths: [] };
+    }
+
+    if (!fs.existsSync(payload.imagePath)) {
+      console.warn(`[LLMHelper] Attached image not found: ${payload.imagePath}`);
+      return {
+        payload: {
+          ...normalizedPayload,
+          imagePath: undefined,
+          context: this.appendContextNote(
+            payload.context,
+            `Image attachment unavailable: ${path.basename(payload.imagePath)} was not found on disk.`
+          ),
+        },
+        cleanupPaths: [],
+      };
+    }
+
+    try {
+      const multimodal = MultimodalHelper.getInstance();
+      const processed = await multimodal.prepareImage(payload.imagePath, { runOCR: true });
+      const cleanupPaths =
+        processed.metadata.temporary && processed.processedPath !== payload.imagePath
+          ? [processed.processedPath]
+          : [];
+
+      console.log(
+        `[LLMHelper] Prepared image ${path.basename(payload.imagePath)} -> ${path.basename(processed.processedPath)} (ocr=${processed.metadata.usedOCR}, size=${processed.metadata.processedSize})`
+      );
+
+      return {
+        payload: {
+          ...normalizedPayload,
+          imagePath: processed.processedPath,
+          message: this.buildMessageWithOCR(payload.message, processed.ocrText),
+        },
+        cleanupPaths,
+      };
+    } catch (error) {
+      console.warn("[LLMHelper] Image preprocessing failed, using original image:", error);
+      return { payload: normalizedPayload, cleanupPaths: [] };
+    }
+  }
+
+  private async cleanupPreparedPayload(cleanupPaths: string[]): Promise<void> {
+    if (cleanupPaths.length === 0) {
+      return;
+    }
+
+    const multimodal = MultimodalHelper.getInstance();
+    await Promise.all(cleanupPaths.map((filePath) => multimodal.cleanupFile(filePath)));
+  }
+
   // ─── OLLAMA PROVIDER DELEGATIONS ──────────────────────────────────
 
   private async callOllamaWithModel(modelId: string, prompt: string, imagePath?: string): Promise<string> {
@@ -363,9 +471,9 @@ export class LLMHelper extends EventEmitter {
     return provider.forceRestart();
   }
 
-  private async * streamWithOllama(message: string, context?: string, systemPrompt: string = UNIVERSAL_SYSTEM_PROMPT, imagePath?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithOllama(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new OllamaProvider(this.ollamaUrl, this.ollamaModel);
-    yield* provider.stream(message, context, systemPrompt, imagePath);
+    yield* provider.stream(payload);
   }
 
   // ─── GEMINI PROVIDER DELEGATIONS ──────────────────────────────────
@@ -422,13 +530,15 @@ export class LLMHelper extends EventEmitter {
   }
 
   public async analyzeImageFile(imagePath: string) {
-    const imageData = await fs.promises.readFile(imagePath);
     const prompt = `${HARD_SYSTEM_PROMPT}\n\nDescribe the content of this image in a short, concise answer. If it contains code or a problem, solve it. \n\n${IMAGE_ANALYSIS_PROMPT}`;
-    const contents = [
-      { text: prompt },
-      { inlineData: { mimeType: "image/png", data: imageData.toString("base64") } }
-    ];
-    const text = await this.generateWithFlash(contents);
+
+    // Use the standardized, provider-agnostic chat logic
+    const text = await this.chat({
+      message: "Please describe this image.",
+      imagePath: imagePath,
+      systemPrompt: prompt
+    });
+
     return { text, timestamp: Date.now() };
   }
 
@@ -446,19 +556,19 @@ export class LLMHelper extends EventEmitter {
 
   // ─── MORE GEMINI STREAMS ──────────────────────────────────────────
 
-  private async * streamWithGeminiMultimodal(userMessage: string, imagePath: string, model: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithGeminiMultimodal(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new GeminiProvider(this.client!);
-    yield* provider.streamMultimodal(userMessage, imagePath, model);
+    yield* provider.stream(payload);
   }
 
-  private async * streamWithGeminiModel(fullMessage: string, model: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithGeminiModel(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new GeminiProvider(this.client!);
-    yield* provider.streamWithModel(fullMessage, model);
+    yield* provider.stream(payload);
   }
 
-  private async * streamWithGeminiParallelRace(fullMessage: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithGeminiParallelRace(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new GeminiProvider(this.client!);
-    yield* provider.streamParallelRace(fullMessage);
+    yield* provider.streamParallelRace(payload);
   }
 
   private async collectStreamResponse(fullMessage: string, model: string): Promise<string> {
@@ -478,95 +588,88 @@ export class LLMHelper extends EventEmitter {
 
   // ─── GROQ PROVIDER DELEGATIONS ────────────────────────────────────
 
-  private async generateWithGroq(fullMessage: string): Promise<string> {
+  private async generateWithGroq(payload: ChatPayload): Promise<string> {
     const provider = new GroqProvider(this.groqClient!);
-    return provider.generate(fullMessage);
+    return provider.generate(payload);
   }
 
-  private async * streamWithGroq(fullMessage: string): AsyncGenerator<string, void, unknown> {
-    const provider = new GroqProvider(this.groqClient!);
-    yield* provider.stream(fullMessage);
+  private async generateWithGemini(payload: ChatPayload): Promise<string> {
+    const provider = new GeminiProvider(this.client!);
+    return provider.generate(payload);
   }
 
-  public async * streamWithGroqOrGemini(
-    groqMessage: string,
-    geminiMessage: string,
-    config?: { temperature?: number; maxTokens?: number }
-  ): AsyncGenerator<string, void, unknown> {
+  private async * streamWithGroq(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
+    const provider = new GroqProvider(this.groqClient!);
+    yield* provider.stream(payload);
+  }
+
+  public async * streamWithGroqOrGemini(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new GroqProvider(this.groqClient!);
     yield* provider.streamWithGeminiFallback(
-      groqMessage,
-      geminiMessage,
-      (msg, model) => this.streamWithGeminiModel(msg, model),
-      config
+      payload,
+      (p) => this.streamWithGeminiModel(p)
     );
   }
 
   // ─── OPENAI-COMPAT PROVIDER DELEGATIONS ───────────────────────────
 
-  private async generateWithOpenai(userMessage: string, systemPrompt?: string, imagePath?: string): Promise<string> {
+  private async generateWithOpenai(payload: ChatPayload): Promise<string> {
     const provider = new OpenAICompatProvider(this.openaiClient!, OPENAI_MODEL, "OpenAI");
-    return provider.generate(userMessage, systemPrompt, imagePath);
+    return provider.generate(payload);
   }
 
-  private async generateWithNvidia(userMessage: string, systemPrompt?: string): Promise<string> {
+  private async generateWithNvidia(payload: ChatPayload): Promise<string> {
     const provider = new OpenAICompatProvider(this.nvidiaClient!, NVIDIA_MODEL, "NVIDIA");
-    return provider.generate(userMessage, systemPrompt);
+    return provider.generate(payload);
   }
 
-  private async generateWithDeepseek(userMessage: string, systemPrompt?: string): Promise<string> {
+  private async generateWithDeepseek(payload: ChatPayload): Promise<string> {
     const provider = new OpenAICompatProvider(this.deepseekClient!, DEEPSEEK_MODEL, "DeepSeek");
-    return provider.generate(userMessage, systemPrompt);
+    return provider.generate(payload);
   }
 
-  private async * streamWithOpenai(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithOpenai(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new OpenAICompatProvider(this.openaiClient!, OPENAI_MODEL, "OpenAI");
-    yield* provider.stream(userMessage, systemPrompt);
+    yield* provider.stream(payload);
   }
 
-  private async * streamWithNvidia(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithNvidia(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new OpenAICompatProvider(this.nvidiaClient!, NVIDIA_MODEL, "NVIDIA");
-    yield* provider.stream(userMessage, systemPrompt);
+    yield* provider.stream(payload);
   }
 
-  private async * streamWithDeepseek(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithDeepseek(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new OpenAICompatProvider(this.deepseekClient!, DEEPSEEK_MODEL, "DeepSeek");
-    yield* provider.stream(userMessage, systemPrompt);
+    yield* provider.stream(payload);
   }
 
-  private async * streamWithOpenaiMultimodal(userMessage: string, imagePath: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithOpenaiMultimodal(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new OpenAICompatProvider(this.openaiClient!, OPENAI_MODEL, "OpenAI");
-    yield* provider.streamMultimodal(userMessage, imagePath, systemPrompt);
+    yield* provider.stream(payload);
   }
 
   // ─── CLAUDE PROVIDER DELEGATIONS ──────────────────────────────────
 
-  private async generateWithClaude(userMessage: string, systemPrompt?: string, imagePath?: string): Promise<string> {
+  private async generateWithClaude(payload: ChatPayload): Promise<string> {
     const provider = new ClaudeProvider(this.claudeClient!);
-    return provider.generate(userMessage, systemPrompt, imagePath);
+    return provider.generate(payload);
   }
 
-  private async * streamWithClaude(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithClaude(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new ClaudeProvider(this.claudeClient!);
-    yield* provider.stream(userMessage, systemPrompt);
+    yield* provider.stream(payload);
   }
 
-  private async * streamWithClaudeMultimodal(userMessage: string, imagePath: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithClaudeMultimodal(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     const provider = new ClaudeProvider(this.claudeClient!);
-    yield* provider.streamMultimodal(userMessage, imagePath, systemPrompt);
+    yield* provider.stream(payload);
   }
 
   // ─── CUSTOM CURL PROVIDER DELEGATIONS ─────────────────────────────
 
-  private async executeCustomProvider(
-    combinedMessage: string,
-    systemPrompt: string,
-    rawUserMessage: string,
-    context: string,
-    imagePath?: string
-  ): Promise<string> {
+  private async executeCustomProvider(payload: ChatPayload): Promise<string> {
     const provider = new CustomCurlProvider(this.customProvider!);
-    return provider.execute(combinedMessage, systemPrompt, rawUserMessage, context, imagePath);
+    return provider.generate(payload);
   }
 
   private mapToCustomPrompt(prompt: string): string {
@@ -574,10 +677,10 @@ export class LLMHelper extends EventEmitter {
     return CustomCurlProvider.mapToCustomPrompt(prompt);
   }
 
-  private async * streamWithCustom(message: string, context?: string, imagePath?: string, systemPrompt: string = UNIVERSAL_SYSTEM_PROMPT): AsyncGenerator<string, void, unknown> {
+  private async * streamWithCustom(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     if (!this.customProvider) throw new Error("No custom provider configured");
     const provider = new CustomCurlProvider(this.customProvider!);
-    yield* provider.stream(message, context, imagePath, systemPrompt);
+    yield* provider.stream(payload);
   }
 
   // ─── CONNECTION TESTING ───────────────────────────────────────────
@@ -620,9 +723,33 @@ export class LLMHelper extends EventEmitter {
           const resp = await fetch(`${this.ollamaUrl}/api/tags`);
           return resp.ok ? { success: true } : { success: false, error: `HTTP ${resp.status}` };
         }
+        case 'custom': {
+          // In this case, apiKey is actually the curlCommand (reused parameter)
+          return await this.testCustomProvider(apiKey);
+        }
         default:
           return { success: false, error: `Unknown provider: ${provider}` };
       }
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  public async testCustomProvider(curlCommand: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = new CustomCurlProvider({
+        id: 'test',
+        name: 'Test',
+        curlCommand
+      });
+      const response = await provider.generate({
+        message: "Hello",
+        systemPrompt: "You are a helpful assistant. Reply only with 'Hello' if you hear me."
+      });
+      if (response && response.trim().length > 0) {
+        return { success: true };
+      }
+      return { success: false, error: "Empty response from custom provider" };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -697,13 +824,13 @@ export class LLMHelper extends EventEmitter {
 
   // ─── GEMINI GENERATION HELPERS ────────────────────────────────────
 
-  private async tryGenerateResponse(fullMessage: string, imagePath?: string): Promise<string> {
+  private async tryGenerateResponse(payload: ChatPayload): Promise<string> {
     let rawResponse: string;
 
-    if (imagePath) {
-      const imageData = await fs.promises.readFile(imagePath);
+    if (payload.imagePath) {
+      const imageData = await fs.promises.readFile(payload.imagePath);
       const contents = [
-        { text: fullMessage },
+        { text: payload.message },
         { inlineData: { mimeType: "image/png", data: imageData.toString("base64") } }
       ];
       if (this.client) {
@@ -713,9 +840,9 @@ export class LLMHelper extends EventEmitter {
       }
     } else {
       if (this.useOllama) {
-        rawResponse = await this.callOllama(fullMessage);
+        rawResponse = await this.callOllama(payload.message);
       } else if (this.client) {
-        rawResponse = await this.generateContent([{ text: fullMessage }]);
+        rawResponse = await this.generateContent([{ text: payload.message }]);
       } else {
         throw new Error("No LLM provider configured");
       }
@@ -726,62 +853,57 @@ export class LLMHelper extends EventEmitter {
 
   // ─── CHAT ROUTING (NON-STREAMING) ─────────────────────────────────
 
-  public async chatWithGemini(message: string, imagePath?: string, context?: string, skipSystemPrompt: boolean = false, alternateGroqMessage?: string): Promise<string> {
+  public async chatWithGemini(payload: ChatPayload): Promise<string> {
+    const { payload: preparedPayload, cleanupPaths } = await this.preparePayload(payload);
+    const isMultimodal = !!preparedPayload.imagePath;
+
+    const geminiPayload = this.buildProviderPayload(preparedPayload, HARD_SYSTEM_PROMPT);
+    const groqPayload = this.buildProviderPayload(preparedPayload, GROQ_SYSTEM_PROMPT, {
+      message: preparedPayload.options?.alternateGroqMessage || preparedPayload.message
+    });
+    const openaiPayload = this.buildProviderPayload(preparedPayload, OPENAI_SYSTEM_PROMPT);
+    const claudePayload = this.buildProviderPayload(preparedPayload, CLAUDE_SYSTEM_PROMPT);
+    const customPayload = this.buildCustomPayload(preparedPayload);
+
+    const processProviderResponse = async (request: Promise<string>): Promise<string> => {
+      const response = await request;
+      return this.processResponse(response);
+    };
+
     try {
-      const isMultimodal = !!imagePath;
-
-      const buildMessage = (systemPrompt: string) => {
-        if (skipSystemPrompt) {
-          return context
-            ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
-            : message;
-        }
-        return context
-          ? `${systemPrompt}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
-          : `${systemPrompt}\n\n${message}`;
-      };
-
-      const userContent = context
-        ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
-        : message;
-
-      const combinedMessages = {
-        gemini: buildMessage(HARD_SYSTEM_PROMPT),
-        groq: alternateGroqMessage || buildMessage(GROQ_SYSTEM_PROMPT),
-      };
-
-      const openaiSystemPrompt = skipSystemPrompt ? undefined : OPENAI_SYSTEM_PROMPT;
-      const claudeSystemPrompt = skipSystemPrompt ? undefined : CLAUDE_SYSTEM_PROMPT;
-
       if (this.useOllama) {
-        return await this.callOllama(combinedMessages.gemini);
+        const ollamaProvider = new OllamaProvider(this.ollamaUrl, this.ollamaModel);
+        return await processProviderResponse(ollamaProvider.generate(geminiPayload));
       }
 
       if (this.customProvider) {
-        const response = await this.executeCustomProvider(
-          combinedMessages.gemini,
-          skipSystemPrompt ? "" : HARD_SYSTEM_PROMPT,
-          message,
-          context || "",
-          imagePath
-        );
-        return this.processResponse(response);
+        const provider = new CustomCurlProvider(this.customProvider);
+        return await processProviderResponse(provider.generate(customPayload));
       }
 
       if (this.currentModelId === OPENAI_MODEL && this.openaiClient) {
-        return await this.generateWithOpenai(userContent, openaiSystemPrompt, imagePath);
+        const provider = new OpenAICompatProvider(this.openaiClient, OPENAI_MODEL, "OpenAI");
+        return await processProviderResponse(provider.generate(openaiPayload));
       }
+
       if (this.currentModelId === CLAUDE_MODEL && this.claudeClient) {
-        return await this.generateWithClaude(userContent, claudeSystemPrompt, imagePath);
+        const provider = new ClaudeProvider(this.claudeClient);
+        return await processProviderResponse(provider.generate(claudePayload));
       }
+
       if (this.currentModelId === GROQ_MODEL && this.groqClient && !isMultimodal) {
-        return await this.generateWithGroq(combinedMessages.groq);
+        const provider = new GroqProvider(this.groqClient);
+        return await processProviderResponse(provider.generate(groqPayload));
       }
+
       if (this.currentModelId === NVIDIA_MODEL && this.nvidiaClient && !isMultimodal) {
-        return await this.generateWithNvidia(userContent, openaiSystemPrompt);
+        const provider = new OpenAICompatProvider(this.nvidiaClient, NVIDIA_MODEL, "NVIDIA");
+        return await processProviderResponse(provider.generate(openaiPayload));
       }
+
       if (this.currentModelId === DEEPSEEK_MODEL && this.deepseekClient && !isMultimodal) {
-        return await this.generateWithDeepseek(userContent, openaiSystemPrompt);
+        const provider = new OpenAICompatProvider(this.deepseekClient, DEEPSEEK_MODEL, "DeepSeek");
+        return await processProviderResponse(provider.generate(openaiPayload));
       }
 
       type ProviderAttempt = { name: string; execute: () => Promise<string> };
@@ -789,44 +911,49 @@ export class LLMHelper extends EventEmitter {
 
       if (isMultimodal) {
         if (this.client) {
-          providers.push({ name: `Gemini Flash`, execute: () => this.tryGenerateResponse(combinedMessages.gemini, imagePath) });
+          const provider = new GeminiProvider(this.client);
+          providers.push({ name: "Gemini Flash", execute: () => provider.generate(geminiPayload) });
         }
         if (this.openaiClient) {
-          providers.push({ name: `OpenAI`, execute: () => this.generateWithOpenai(userContent, openaiSystemPrompt, imagePath) });
+          const provider = new OpenAICompatProvider(this.openaiClient, OPENAI_MODEL, "OpenAI");
+          providers.push({ name: "OpenAI", execute: () => provider.generate(openaiPayload) });
         }
         if (this.claudeClient) {
-          providers.push({ name: `Claude`, execute: () => this.generateWithClaude(userContent, claudeSystemPrompt, imagePath) });
+          const provider = new ClaudeProvider(this.claudeClient);
+          providers.push({ name: "Claude", execute: () => provider.generate(claudePayload) });
+        }
+        if (!this.useOllama) {
+          const provider = new OllamaProvider(this.ollamaUrl, this.ollamaModel);
+          providers.push({ name: "Ollama", execute: () => provider.generate(geminiPayload) });
         }
       } else {
         if (this.claudeClient) {
-          providers.push({ name: `Claude`, execute: () => this.generateWithClaude(userContent, claudeSystemPrompt) });
+          const provider = new ClaudeProvider(this.claudeClient);
+          providers.push({ name: "Claude", execute: () => provider.generate(claudePayload) });
         }
         if (this.client) {
-          providers.push({ name: `Gemini Flash`, execute: () => this.tryGenerateResponse(combinedMessages.gemini) });
+          const provider = new GeminiProvider(this.client);
+          providers.push({ name: "Gemini Flash", execute: () => provider.generate(geminiPayload) });
         }
         if (this.nvidiaClient) {
-          providers.push({ name: `NVIDIA`, execute: () => this.generateWithNvidia(userContent, openaiSystemPrompt) });
+          const provider = new OpenAICompatProvider(this.nvidiaClient, NVIDIA_MODEL, "NVIDIA");
+          providers.push({ name: "NVIDIA", execute: () => provider.generate(openaiPayload) });
         }
         if (this.deepseekClient) {
-          providers.push({ name: `DeepSeek`, execute: () => this.generateWithDeepseek(userContent, openaiSystemPrompt) });
+          const provider = new OpenAICompatProvider(this.deepseekClient, DEEPSEEK_MODEL, "DeepSeek");
+          providers.push({ name: "DeepSeek", execute: () => provider.generate(openaiPayload) });
         }
         if (this.groqClient) {
-          providers.push({ name: `Groq`, execute: () => this.generateWithGroq(combinedMessages.groq) });
+          const provider = new GroqProvider(this.groqClient);
+          providers.push({ name: "Groq", execute: () => provider.generate(groqPayload) });
         }
         if (this.openaiClient) {
-          providers.push({ name: `OpenAI`, execute: () => this.generateWithOpenai(userContent, openaiSystemPrompt) });
+          const provider = new OpenAICompatProvider(this.openaiClient, OPENAI_MODEL, "OpenAI");
+          providers.push({ name: "OpenAI", execute: () => provider.generate(openaiPayload) });
         }
         if (!this.useOllama) {
-          providers.push({
-            name: `Ollama`,
-            execute: async () => {
-              try {
-                return await this.callOllama(combinedMessages.gemini);
-              } catch (e) {
-                throw new Error(`Ollama not available: ${(e as Error).message}`);
-              }
-            }
-          });
+          const provider = new OllamaProvider(this.ollamaUrl, this.ollamaModel);
+          providers.push({ name: "Ollama", execute: () => provider.generate(geminiPayload) });
         }
       }
 
@@ -845,12 +972,13 @@ export class LLMHelper extends EventEmitter {
             if (rawResponse && rawResponse.trim().length > 0) {
               return this.processResponse(rawResponse);
             }
-          } catch (error: any) { }
+          } catch {
+            // Try the next provider in the rotation.
+          }
         }
       }
 
       return "I apologize, but I couldn't generate a response. Please try again.";
-
     } catch (error: any) {
       if (error.message.includes("503") || error.message.includes("overloaded")) {
         return "The AI service is currently overloaded. Please try again in a moment.";
@@ -859,153 +987,187 @@ export class LLMHelper extends EventEmitter {
         return "Authentication failed. Please check your API key in settings.";
       }
       return `I encountered an error: ${error.message || "Unknown error"}. Please try again.`;
+    } finally {
+      await this.cleanupPreparedPayload(cleanupPaths);
     }
   }
 
   // ─── CHAT ROUTING (STREAMING W/ GEMINI FOCUS) ─────────────────────
 
-  public async * streamChatWithGemini(userMessage: string, imagePath?: string, context?: string, skipSystemPrompt: boolean = false): AsyncGenerator<string, void, unknown> {
-    const isMultimodal = !!imagePath;
+  public async * streamChatWithGemini(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
+    const { payload: preparedPayload, cleanupPaths } = await this.preparePayload(payload);
+    const isMultimodal = !!preparedPayload.imagePath;
 
-    let fullMessage = skipSystemPrompt ? "" : UNIVERSAL_SYSTEM_PROMPT;
-    if (context) fullMessage += `\n\nCONTEXT:\n${context}`;
-    fullMessage += `\n\nUSER QUESTION:\n${userMessage}`;
+    const geminiPayload = this.buildProviderPayload(preparedPayload, UNIVERSAL_SYSTEM_PROMPT);
+    const groqPayload = this.buildProviderPayload(preparedPayload, UNIVERSAL_SYSTEM_PROMPT, {
+      message: preparedPayload.options?.alternateGroqMessage || preparedPayload.message
+    });
+    const openaiPayload = this.buildProviderPayload(preparedPayload, OPENAI_SYSTEM_PROMPT);
+    const claudePayload = this.buildProviderPayload(preparedPayload, CLAUDE_SYSTEM_PROMPT);
+    const customPayload = this.buildCustomPayload(preparedPayload);
 
-    if (this.useOllama) {
-      yield* this.streamWithOllama(userMessage, context, skipSystemPrompt ? "" : UNIVERSAL_SYSTEM_PROMPT, imagePath);
-      return;
-    }
+    type StreamAttempt = {
+      name: string;
+      create: () => AsyncGenerator<string, void, unknown>;
+    };
 
-    if (this.customProvider) {
-      yield* this.streamWithCustom(userMessage, context, imagePath, skipSystemPrompt ? "" : UNIVERSAL_SYSTEM_PROMPT);
-      return;
-    }
-
-    if (isMultimodal) {
-      if (this.client) {
-        yield* this.streamWithGeminiMultimodal(userMessage, imagePath!, GEMINI_FLASH_MODEL);
+    const attempts: StreamAttempt[] = [];
+    const addAttempt = (name: string, enabled: boolean, create: () => AsyncGenerator<string, void, unknown>) => {
+      if (!enabled || attempts.some((attempt) => attempt.name === name)) {
         return;
       }
-      if (this.openaiClient) {
-        yield* this.streamWithOpenaiMultimodal(userMessage, imagePath!, OPENAI_SYSTEM_PROMPT);
+      attempts.push({ name, create });
+    };
+
+    try {
+      if (this.useOllama) {
+        addAttempt("Ollama", true, () => this.streamWithOllama(geminiPayload));
+      } else if (this.customProvider) {
+        addAttempt("Custom", true, () => this.streamWithCustom(customPayload));
+      } else if (isMultimodal) {
+        addAttempt("OpenAI", !!this.openaiClient && this.currentModelId === OPENAI_MODEL, () => this.streamWithOpenai(openaiPayload));
+        addAttempt("Claude", !!this.claudeClient && this.currentModelId === CLAUDE_MODEL, () => this.streamWithClaude(claudePayload));
+        addAttempt("Gemini", !!this.client && (this.currentModelId === GEMINI_FLASH_MODEL || this.currentModelId === GEMINI_PRO_MODEL), () => this.streamWithGeminiModel(geminiPayload));
+        addAttempt("Gemini", !!this.client, () => this.streamWithGeminiModel(geminiPayload));
+        addAttempt("OpenAI", !!this.openaiClient, () => this.streamWithOpenai(openaiPayload));
+        addAttempt("Claude", !!this.claudeClient, () => this.streamWithClaude(claudePayload));
+        addAttempt("Ollama", !this.useOllama, () => this.streamWithOllama(geminiPayload));
+      } else {
+        addAttempt("Claude", !!this.claudeClient && this.currentModelId === CLAUDE_MODEL, () => this.streamWithClaude(claudePayload));
+        addAttempt("OpenAI", !!this.openaiClient && this.currentModelId === OPENAI_MODEL, () => this.streamWithOpenai(openaiPayload));
+        addAttempt("Groq", !!this.groqClient && this.currentModelId === GROQ_MODEL, () => this.streamWithGroq(groqPayload));
+        addAttempt("NVIDIA", !!this.nvidiaClient && this.currentModelId === NVIDIA_MODEL, () => this.streamWithNvidia(openaiPayload));
+        addAttempt("DeepSeek", !!this.deepseekClient && this.currentModelId === DEEPSEEK_MODEL, () => this.streamWithDeepseek(openaiPayload));
+        addAttempt("Gemini", !!this.client && (this.currentModelId === GEMINI_FLASH_MODEL || this.currentModelId === GEMINI_PRO_MODEL), () => this.streamWithGeminiModel(geminiPayload));
+        addAttempt("Claude", !!this.claudeClient, () => this.streamWithClaude(claudePayload));
+        addAttempt("Gemini", !!this.client, () => this.streamWithGeminiModel(geminiPayload));
+        addAttempt("NVIDIA", !!this.nvidiaClient, () => this.streamWithNvidia(openaiPayload));
+        addAttempt("DeepSeek", !!this.deepseekClient, () => this.streamWithDeepseek(openaiPayload));
+        addAttempt("Groq", !!this.groqClient, () => this.streamWithGroq(groqPayload));
+        addAttempt("OpenAI", !!this.openaiClient, () => this.streamWithOpenai(openaiPayload));
+        addAttempt("Ollama", !this.useOllama, () => this.streamWithOllama(geminiPayload));
+      }
+
+      if (attempts.length === 0) {
+        yield "No AI providers configured. Please add at least one API key in Settings.";
         return;
       }
-      if (this.claudeClient) {
-        yield* this.streamWithClaudeMultimodal(userMessage, imagePath!, CLAUDE_SYSTEM_PROMPT);
-        return;
-      }
-      yield "Image analysis requires Gemini, OpenAI, or Claude. Please configure one of these providers.";
-      return;
-    }
 
-    let primaryStream: (() => AsyncGenerator<string, void, unknown>)[] = [];
-
-    if (this.currentModelId === CLAUDE_MODEL && this.claudeClient) {
-      primaryStream.push(() => this.streamWithClaude(userMessage, CLAUDE_SYSTEM_PROMPT));
-    } else if (this.currentModelId === OPENAI_MODEL && this.openaiClient) {
-      primaryStream.push(() => this.streamWithOpenai(userMessage, OPENAI_SYSTEM_PROMPT));
-    } else if (this.currentModelId === GROQ_MODEL && this.groqClient) {
-      primaryStream.push(() => this.streamWithGroq(fullMessage));
-    } else if (this.currentModelId === NVIDIA_MODEL && this.nvidiaClient) {
-      primaryStream.push(() => this.streamWithNvidia(userMessage, OPENAI_SYSTEM_PROMPT));
-    } else if (this.currentModelId === DEEPSEEK_MODEL && this.deepseekClient) {
-      primaryStream.push(() => this.streamWithDeepseek(userMessage, OPENAI_SYSTEM_PROMPT));
-    } else if (this.client) {
-      primaryStream.push(() => this.streamWithGeminiParallelRace(fullMessage));
-    }
-
-    if (primaryStream.length > 0) {
-      for (const streamFn of primaryStream) {
+      for (const attempt of attempts) {
         try {
-          const generator = streamFn();
           let hasContent = false;
-          for await (const chunk of generator) {
+          for await (const chunk of attempt.create()) {
             if (chunk) {
               hasContent = true;
               yield chunk;
             }
           }
-          if (hasContent) return;
-        } catch (e: any) {
-          console.warn(`[LLMHelper] Primary stream failed: ${e.message}`);
+
+          if (hasContent) {
+            return;
+          }
+        } catch (error: any) {
+          console.warn(`[LLMHelper] Stream attempt failed for ${attempt.name}: ${error.message}`);
         }
       }
-    }
 
-    if (this.client) {
-      try {
-        console.log(`[LLMHelper] Fallback: Streaming with Gemini Flash`);
-        let hasContent = false;
-        for await (const chunk of this.streamWithGeminiModel(fullMessage, GEMINI_FLASH_MODEL)) {
-          if (chunk) {
-            hasContent = true;
-            yield chunk;
-          }
-        }
-        if (hasContent) return;
-      } catch (e: any) { }
-    }
+      if (isMultimodal) {
+        yield "Image analysis requires a configured multimodal provider. Please add Gemini, OpenAI, Claude, or a vision-capable Ollama model.";
+        return;
+      }
 
-    yield "All AI providers failed to generate a response. Please try again.";
+      yield "All AI providers failed to generate a response. Please try again.";
+    } finally {
+      await this.cleanupPreparedPayload(cleanupPaths);
+    }
   }
 
   // ─── UNIVERSAL STREAM ROUTING ─────────────────────────────────────
 
-  public async * streamChat(message: string, context?: string, imagePath?: string, systemPrompt: string = UNIVERSAL_SYSTEM_PROMPT): AsyncGenerator<string, void, unknown> {
+  public async * streamChat(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
+    // ─── AIR-GAP PROTECTION ─────────────────────────────────────────
+    if (this.airGapMode && !this.useOllama) {
+      console.error("[LLMHelper] Air-Gap Mode Block: Attempted cloud chat while air-gap is ON");
+      yield "Error: Air-Gap Mode is active. Cloud providers are disabled. Please switch to Ollama or a local provider.";
+      return;
+    }
+
+    yield* this.streamChatWithGemini(payload);
+    return;
+
+    const { imagePath } = payload;
+    let finalPayload = payload;
+
+    // ─── IMAGE PRE-PROCESSING (PHASE 2) ─────────────────────────────
+    if (imagePath && fs.existsSync(imagePath)) {
+      try {
+        const multimodal = MultimodalHelper.getInstance();
+        const processed = await multimodal.prepareImage(imagePath, { runOCR: true });
+
+        // Enrich the payload with processed image and OCR ground truth
+        finalPayload = {
+          ...payload,
+          imagePath: processed.processedPath,
+          message: processed.ocrText
+            ? `[OCR TEXT FROM SCREENSHOT]:\n${processed.ocrText}\n\n[USER MESSAGE]:\n${payload.message}`
+            : payload.message
+        };
+        console.log(`[LLMHelper] Image pre-processed. OCR: ${!!processed.ocrText}, Size: ${processed.metadata.processedSize} bytes`);
+      } catch (err) {
+        console.warn("[LLMHelper] Image pre-processing failed, using original:", err);
+      }
+    }
+
     if (this.useOllama) {
-      yield* this.streamWithOllama(message, context, systemPrompt, imagePath);
+      yield* this.streamWithOllama(finalPayload);
       return;
     }
 
     if (this.customProvider) {
-      yield* this.streamWithCustom(message, context, imagePath, systemPrompt);
+      yield* this.streamWithCustom(finalPayload);
       return;
     }
 
     if (this.currentModelId === GROQ_MODEL && this.groqClient && !imagePath) {
-      const fullMessage = context ? `${systemPrompt}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}` : `${systemPrompt}\n\n${message}`;
-      yield* this.streamWithGroq(fullMessage);
+      const provider = new GroqProvider(this.groqClient);
+      yield* provider.stream(finalPayload);
       return;
     }
 
-    if (this.currentModelId === NVIDIA_MODEL && this.nvidiaClient && !imagePath) {
-      const userContent = context ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}` : message;
-      yield* this.streamWithNvidia(userContent, OPENAI_SYSTEM_PROMPT);
-      return;
-    }
-
-    if (this.currentModelId === DEEPSEEK_MODEL && this.deepseekClient && !imagePath) {
-      const userContent = context ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}` : message;
-      yield* this.streamWithDeepseek(userContent, OPENAI_SYSTEM_PROMPT);
+    if ((this.currentModelId === NVIDIA_MODEL && this.nvidiaClient && !imagePath) ||
+      (this.currentModelId === DEEPSEEK_MODEL && this.deepseekClient && !imagePath)) {
+      const provider = new OpenAICompatProvider(
+        this.currentModelId === NVIDIA_MODEL ? this.nvidiaClient! : this.deepseekClient!,
+        this.currentModelId,
+        this.currentModelId === NVIDIA_MODEL ? "NVIDIA" : "DeepSeek"
+      );
+      yield* provider.stream({ ...finalPayload, systemPrompt: OPENAI_SYSTEM_PROMPT });
       return;
     }
 
     if (this.currentModelId === CLAUDE_MODEL && this.claudeClient) {
-      const userContent = context ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}` : message;
-      if (imagePath) {
-        yield* this.streamWithClaudeMultimodal(userContent, imagePath, CLAUDE_SYSTEM_PROMPT);
-      } else {
-        yield* this.streamWithClaude(userContent, CLAUDE_SYSTEM_PROMPT);
-      }
+      const provider = new ClaudeProvider(this.claudeClient);
+      yield* provider.stream({ ...finalPayload, systemPrompt: CLAUDE_SYSTEM_PROMPT });
       return;
     }
 
     if (this.currentModelId === OPENAI_MODEL && this.openaiClient) {
-      const userContent = context ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}` : message;
-      if (imagePath) {
-        yield* this.streamWithOpenaiMultimodal(userContent, imagePath, OPENAI_SYSTEM_PROMPT);
-      } else {
-        yield* this.streamWithOpenai(userContent, OPENAI_SYSTEM_PROMPT);
-      }
+      const provider = new OpenAICompatProvider(this.openaiClient, OPENAI_MODEL, "OpenAI");
+      yield* provider.stream({ ...finalPayload, systemPrompt: OPENAI_SYSTEM_PROMPT });
       return;
     }
 
-    yield* this.streamChatWithGemini(message, imagePath, context, systemPrompt === UNIVERSAL_SYSTEM_PROMPT ? false : true);
+    yield* this.streamChatWithGemini(finalPayload);
   }
 
   // ─── MEETING SUMMARY LOGIC ────────────────────────────────────────
 
-  public async generateMeetingSummary(systemPrompt: string, context: string, groqSystemPrompt?: string): Promise<string> {
+  public async generateMeetingSummary(params: {
+    systemPrompt: string;
+    context: string;
+    groqSystemPrompt?: string
+  }): Promise<string> {
+    const { systemPrompt, context, groqSystemPrompt } = params;
     const estimateTokens = (text: string) => Math.ceil(text.length / 4);
     const tokenCount = estimateTokens(context);
 
@@ -1061,16 +1223,22 @@ export class LLMHelper extends EventEmitter {
 
   // ─── UNIVERSAL CHAT (NON-STREAMING) ───────────────────────────────
 
-  public async chat(message: string, imagePath?: string, context?: string, systemPromptOverride?: string): Promise<string> {
+  public async chat(payload: ChatPayload): Promise<string> {
+    // ─── AIR-GAP PROTECTION ─────────────────────────────────────────
+    if (this.airGapMode && !this.useOllama) {
+      return "Error: Air-Gap Mode is active. Cloud providers are disabled.";
+    }
+
     let fullResponse = "";
     try {
-      const stream = this.streamChat(message, context, imagePath, systemPromptOverride || UNIVERSAL_SYSTEM_PROMPT);
+      const stream = this.streamChat(payload);
       for await (const chunk of stream) {
         fullResponse += chunk;
       }
-      return this.processResponse(fullResponse);
+      if (fullResponse.trim().length > 0) return this.processResponse(fullResponse);
+      return await this.chatWithGemini(payload);
     } catch (error: any) {
-      return this.chatWithGemini(message, imagePath, context, !!systemPromptOverride);
+      return this.chatWithGemini(payload);
     }
   }
 }

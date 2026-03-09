@@ -70,6 +70,7 @@ const formatTime = (dateStr: string) => {
 const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onRefresh }) => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [isDetectable, setIsDetectable] = useState(false);
+    const [isAirGap, setIsAirGap] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
     const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
     const [isPrepared, setIsPrepared] = useState(false);
@@ -138,6 +139,19 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
         if (window.electronAPI?.onUndetectableChanged) {
             removeUndetectableListener = window.electronAPI.onUndetectableChanged((undetectable) => {
                 setIsDetectable(!undetectable);
+            });
+        }
+
+        // Sync initial air-gap state
+        if (window.electronAPI?.getAirGapMode) {
+            window.electronAPI.getAirGapMode().then(setIsAirGap);
+        }
+
+        // Listen for air-gap changes
+        let removeAirGapListener: (() => void) | undefined;
+        if (window.electronAPI?.onAirGapChanged) {
+            removeAirGapListener = window.electronAPI.onAirGapChanged((enabled) => {
+                setIsAirGap(enabled);
             });
         }
 
@@ -399,7 +413,14 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <h1 className="text-lg font-bold text-text-primary tracking-tight leading-none">Ghost Writer</h1>
-                                                    <span className="text-[10px] text-text-tertiary font-medium mt-1 uppercase tracking-widest opacity-70">Production v1.2.4</span>
+                                                    <span className="text-[10px] text-text-tertiary font-medium mt-1 uppercase tracking-widest opacity-70">
+                                                        {isAirGap ? "Secure Local Loop" : "Production v1.2.4"}
+                                                        {isAirGap && (
+                                                            <span className="ml-2 px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[8px] font-black rounded border border-emerald-500/30">
+                                                                Local Only
+                                                            </span>
+                                                        )}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
@@ -409,6 +430,7 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
                                             <div
                                                 className="flex items-center p-1 bg-white/5 border border-white/10 rounded-full h-9 min-w-[170px] relative cursor-pointer select-none hover:bg-white/10 transition-all duration-300"
                                                 onClick={toggleDetectable}
+                                                title={isDetectable ? "Switch to Stealth Mode" : "Switch to Visible Mode"}
                                             >
                                                 <motion.div
                                                     className="absolute inset-1 w-[calc(50%-4px)] bg-white text-black rounded-full shadow-2xl z-0"
@@ -421,7 +443,7 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
                                                 </div>
                                                 <div className={`flex-1 flex items-center justify-center gap-1.5 z-10 transition-all duration-500 ${!isDetectable ? 'text-black' : 'text-text-tertiary/60'}`}>
                                                     <Ghost size={12} className={!isDetectable ? 'font-black' : ''} />
-                                                    <span className="text-[9px] font-black uppercase tracking-[0.15em]">Ghost</span>
+                                                    <span className="text-[9px] font-black uppercase tracking-[0.15em]">Stealth</span>
                                                 </div>
                                             </div>
                                         </div>

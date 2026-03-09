@@ -9,11 +9,32 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { GPUHelper, GPUInfo } from '../../utils/GPUHelper';
 import { UNIVERSAL_SYSTEM_PROMPT } from "../prompts";
-import { estimateTokens } from "./ILLMProvider";
+import { DEFAULT_MAX_OUTPUT_TOKENS, ILLMProvider, ChatPayload, estimateTokens } from "./ILLMProvider";
 
 const execAsync = promisify(exec);
+const OLLAMA_VISION_MODEL_HINTS = [
+    'llava',
+    'minicpm-v',
+    'moondream',
+    'qwen2-vl',
+    'qwen3-vl',
+    'qwen3.5',
+    'minimax',
+    'kimi',
+    'glm',
+    'medllama',
+    'gemini',
+    'vl',
+    'vision'
+];
 
-export class OllamaProvider {
+function isLikelyVisionModel(modelName: string): boolean {
+    const lower = modelName.toLowerCase();
+    return OLLAMA_VISION_MODEL_HINTS.some(hint => lower.includes(hint));
+}
+
+export class OllamaProvider implements ILLMProvider {
+    readonly name = "Ollama";
     private gpuInfo: GPUInfo | null = null;
     private initPromise: Promise<void> | null = null;
     private isInitializing: boolean = false;
@@ -140,6 +161,33 @@ export class OllamaProvider {
         return this.initPromise;
     }
 
+    public isAvailable(): boolean {
+        // We can't do a sync network check here easily, but we know it's "available"
+        // as a concept if the URL is set. The actual calls handle the errors.
+        return !!this.ollamaUrl;
+    }
+
+    public supportsMultimodal(): boolean {
+        return true;
+    }
+
+    public async testConnection(): Promise<{ success: boolean; error?: string }> {
+        const available = await this.checkAvailable();
+        return available ? { success: true } : { success: false, error: "Ollama not reachable" };
+    }
+
+    /**
+     * Interface implementation for generation
+     */
+    public async generate(payload: ChatPayload): Promise<string> {
+        const systemPrompt = payload.systemPrompt || (payload.options?.skipSystemPrompt ? "" : UNIVERSAL_SYSTEM_PROMPT);
+        const fullPrompt = payload.context
+            ? `SYSTEM: ${systemPrompt}\nCONTEXT: ${payload.context}\nUSER: ${payload.message}`
+            : `SYSTEM: ${systemPrompt}\nUSER: ${payload.message}`;
+
+        return this.callWithModel(this.ollamaModel, fullPrompt, payload.imagePath);
+    }
+
     // =========================================================================
     // Non-Streaming Generation
     // =========================================================================
@@ -162,13 +210,22 @@ export class OllamaProvider {
 
         if (imagePath) {
             const currentLower = modelId.toLowerCase();
-            const isVision = ['llava', 'minicpm-v', 'moondream', 'qwen2-vl', 'qwen3-vl', 'qwen3.5'].some(v => currentLower.includes(v));
+            const isVision = isLikelyVisionModel(currentLower);
 
             if (!isVision) {
                 const available = await this.getModels();
-                const visionModel = available.find(m => {
-                    const low = m.toLowerCase();
-                    return (low.includes('qwen3-vl') || low.includes('qwen2-vl') || low.includes('llava') || low.includes('minicpm-v') || low.includes('moondream') || low.includes('qwen3.5'));
+                const isCloudMode = modelId.toLowerCase().includes('cloud');
+
+                // Prioritize vision models that match the current tier (Cloud vs Local)
+                const sortedAvailable = [...available].sort((a, b) => {
+                    const aCloud = a.toLowerCase().includes('cloud');
+                    const bCloud = b.toLowerCase().includes('cloud');
+                    if (isCloudMode) return (aCloud === bCloud) ? 0 : (aCloud ? -1 : 1);
+                    return (aCloud === bCloud) ? 0 : (aCloud ? 1 : -1);
+                });
+
+                const visionModel = sortedAvailable.find(m => {
+                    return isLikelyVisionModel(m);
                 });
                 if (visionModel) {
                     console.log(`[OllamaProvider] Auto-switching to vision model: ${visionModel}`);
@@ -225,9 +282,21 @@ export class OllamaProvider {
     // =========================================================================
 
     /**
-     * Stream response from Ollama with vision model auto-switching
+     * Interface implementation for streaming
      */
-    public async * stream(
+    public async * stream(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
+        yield* this.streamInternal(
+            payload.message,
+            payload.context,
+            payload.systemPrompt || (payload.options?.skipSystemPrompt ? "" : UNIVERSAL_SYSTEM_PROMPT),
+            payload.imagePath
+        );
+    }
+
+    /**
+     * Internal implementation for streaming
+     */
+    private async * streamInternal(
         message: string,
         context?: string,
         systemPrompt: string = UNIVERSAL_SYSTEM_PROMPT,
@@ -246,13 +315,22 @@ export class OllamaProvider {
 
             if (imagePath) {
                 const currentLower = this.ollamaModel.toLowerCase();
-                const isAlreadyVision = ['llava', 'minicpm-v', 'moondream', 'qwen2-vl', 'qwen3-vl', 'qwen3.5'].some(v => currentLower.includes(v));
+                const isAlreadyVision = isLikelyVisionModel(currentLower);
 
                 if (!isAlreadyVision) {
                     const available = await this.getModels();
-                    const visionModel = available.find(m => {
-                        const low = m.toLowerCase();
-                        return (low.includes('qwen3-vl') || low.includes('qwen2-vl') || low.includes('llava') || low.includes('minicpm-v') || low.includes('moondream') || low.includes('qwen3.5'));
+                    const isCloudMode = this.ollamaModel.toLowerCase().includes('cloud');
+
+                    // Prioritize matching tiers (Cloud -> Cloud, Local -> Local)
+                    const sortedAvailable = [...available].sort((a, b) => {
+                        const aCloud = a.toLowerCase().includes('cloud');
+                        const bCloud = b.toLowerCase().includes('cloud');
+                        if (isCloudMode) return (aCloud === bCloud) ? 0 : (aCloud ? -1 : 1);
+                        return (aCloud === bCloud) ? 0 : (aCloud ? 1 : -1);
+                    });
+
+                    const visionModel = sortedAvailable.find(m => {
+                        return isLikelyVisionModel(m);
                     });
 
                     if (visionModel) {
@@ -268,10 +346,11 @@ export class OllamaProvider {
                 }
                 try {
                     const img = nativeImage.createFromPath(imagePath);
-                    const resized = img.resize({ width: Math.min(1024, img.getSize().width) });
+                    const width = Math.max(1, img.getSize().width || 1);
+                    const resized = img.resize({ width: Math.min(1024, width) });
                     images.push(resized.toJPEG(75).toString('base64'));
                 } catch (err) {
-                    console.error(`[OllamaProvider] Failed to read image:`, err);
+                    console.error(`[OllamaProvider] Failed to process image:`, err);
                 }
             }
 
@@ -297,9 +376,8 @@ export class OllamaProvider {
                 };
 
                 if (isChat) {
-                    const visionPrompt = "You are an AI analyzing a user's screen. Provide a concise, helpful response regarding the contents of this image.";
                     body.messages = [
-                        { role: 'system', content: visionPrompt },
+                        { role: 'system', content: systemPrompt },
                         { role: 'user', content: context ? `CONTEXT: ${context}\n\nQUESTION: ${message}` : message, images }
                     ];
                 } else {
@@ -450,7 +528,7 @@ export class OllamaProvider {
         try {
             let modelToUse = this.ollamaModel;
             const currentLower = this.ollamaModel.toLowerCase();
-            const isVisionModel = ['vl', 'llava', 'minicpm'].some(v => currentLower.includes(v));
+            const isVisionModel = isLikelyVisionModel(currentLower);
 
             if (isVisionModel) {
                 console.log(`[OllamaProvider] Selected model ${this.ollamaModel} is Vision-heavy. Searching for faster text-only summary model...`);

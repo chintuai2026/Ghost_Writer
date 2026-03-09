@@ -176,6 +176,8 @@ check_userData.js
 tmp/
 /tmp/
 /env.txt
+tests/eval/results/
+eng.traineddata
 
 # Test scripts and artifacts
 test_*.js

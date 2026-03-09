@@ -278,7 +278,12 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeIpcHandle("gemini-chat", async (event, message: string, imagePath?: string, context?: string, options?: { skipSystemPrompt?: boolean }) => {
     try {
-      const result = await appState.processingHelper.getLLMHelper().chatWithGemini(message, imagePath, context, options?.skipSystemPrompt);
+      const result = await appState.processingHelper.getLLMHelper().chatWithGemini({
+        message,
+        imagePath,
+        context,
+        options: { skipSystemPrompt: options?.skipSystemPrompt }
+      });
 
       console.log(`[IPC] gemini - chat response: `, result ? result.substring(0, 50) : "(empty)");
 
@@ -349,8 +354,13 @@ export function initializeIpcHandlers(appState: AppState): void {
       }
 
       try {
-        // USE streamChat which handles routing
-        const stream = llmHelper.streamChat(message, imagePath, context, options?.skipSystemPrompt ? "" : undefined);
+        // USE streamChat which handles routing with structured payload
+        const stream = llmHelper.streamChat({
+          message,
+          imagePath,
+          context,
+          options: { skipSystemPrompt: options?.skipSystemPrompt }
+        });
 
         for await (const token of stream) {
           event.sender.send("gemini-stream-token", token);

@@ -42,6 +42,21 @@ export function registerCredentialHandlers(appState: AppState): void {
   if (credentialHandlersInitialized) return;
   credentialHandlersInitialized = true;
 
+  const broadcastToWindows = (channel: string, payload?: unknown) => {
+    const windowHelper = appState.getWindowHelper();
+    const windows = [
+      windowHelper.getMainWindow(),
+      windowHelper.getLauncherWindow(),
+      windowHelper.getOverlayWindow()
+    ].filter((window, index, allWindows) => {
+      return !!window && !window.isDestroyed() && allWindows.indexOf(window) === index;
+    });
+
+    for (const window of windows) {
+      window.webContents.send(channel, payload);
+    }
+  };
+
   // ==========================================
   // LLM Provider Config
   // ==========================================
@@ -72,6 +87,7 @@ export function registerCredentialHandlers(appState: AppState): void {
     try {
       const llmHelper = appState.processingHelper.getLLMHelper();
       await llmHelper.switchToOllama(model, url);
+      appState.getIntelligenceManager().initializeLLMs();
 
       if (model) {
         const { CredentialsManager } = require('../services/CredentialsManager');
@@ -98,6 +114,7 @@ export function registerCredentialHandlers(appState: AppState): void {
     try {
       const llmHelper = appState.processingHelper.getLLMHelper();
       await llmHelper.switchToGemini(apiKey, modelId);
+      appState.getIntelligenceManager().initializeLLMs();
 
       if (apiKey) {
         const { CredentialsManager } = require('../services/CredentialsManager');
@@ -258,6 +275,9 @@ export function registerCredentialHandlers(appState: AppState): void {
 
       const customProviders = creds.getCustomProviders();
       llmHelper.setModel(modelId, customProviders);
+      appState.getIntelligenceManager().initializeLLMs();
+      broadcastToWindows('model-selected', { modelId });
+      console.log(`[CredentialHandlers] Active model updated to: ${modelId}`);
       return { success: true };
     } catch (error: any) {
       console.error("Error setting model:", error);

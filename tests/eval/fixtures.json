@@ -1,0 +1,94 @@
+[
+    {
+        "id": "GW-001-BEHAVIORAL",
+        "category": "interview",
+        "name": "Difficult Teammate (Behavioral)",
+        "transcript": "[INTERVIEWER]: Tell me about a time you had to deal with a difficult teammate. How did you handle it?",
+        "expected_themes": [
+            "conflict resolution",
+            "empathy",
+            "professionalism",
+            "positive outcome"
+        ],
+        "rubric": {
+            "relevance": 0.3,
+            "grounding": 0.2,
+            "brevity": 0.2,
+            "usefulness": 0.3
+        }
+    },
+    {
+        "id": "GW-002-SYSTEM-DESIGN",
+        "category": "technical",
+        "name": "URL Shortener (System Design)",
+        "transcript": "[INTERVIEWER]: How would you design a URL shortening service like Bitly that scales to 1M requests per day?",
+        "expected_themes": [
+            "database schema",
+            "hashing algorithm",
+            "caching",
+            "scalability",
+            "redirect logic"
+        ],
+        "rubric": {
+            "technical_correctness": 0.4,
+            "clarity": 0.2,
+            "completeness": 0.3,
+            "brevity": 0.1
+        }
+    },
+    {
+        "id": "GW-003-MULTIMODAL-CODE",
+        "category": "multimodal",
+        "name": "Code Screenshot Optimization",
+        "transcript": "[USER]: What should I say about this specific function on my screen?",
+        "image": "assets/tests/code_sample_1.png",
+        "expected_themes": [
+            "complexity analysis",
+            "optimization tips",
+            "refactoring",
+            "syntax explanation"
+        ],
+        "rubric": {
+            "vision_accuracy": 0.4,
+            "technical_depth": 0.3,
+            "actionability": 0.3
+        }
+    },
+    {
+        "id": "GW-004-MEETING-SUMMARY",
+        "category": "meeting",
+        "name": "Action Items from Sync",
+        "transcript": "[ME]: So we agreed on the Q3 roadmap. [PERSON A]: Yes, I will take the API refactor. [PERSON B]: And I will handle the UI migration. [ME]: Great, let's meet next Tuesday.",
+        "expected_themes": [
+            "API refactor",
+            "UI migration",
+            "next meeting Tuesday"
+        ],
+        "rubric": {
+            "grounding": 0.5,
+            "completeness": 0.3,
+            "brevity": 0.2
+        }
+    },
+    {
+        "id": "GW-005-MIXED-CONTEXT",
+        "category": "complex",
+        "name": "Screenshot + Resume Grounding",
+        "transcript": "[INTERVIEWER]: Based on your experience and this job description on the screen, why are you a good fit?",
+        "image": "assets/tests/jd_screenshot.png",
+        "context": {
+            "resume": "Experienced Full Stack Engineer with 5 years in React and Node.js. Built high-scale fintech apps.",
+            "jd_text": "Looking for a React expert to build banking applications."
+        },
+        "expected_themes": [
+            "React experience",
+            "fintech background",
+            "banking apps fit"
+        ],
+        "rubric": {
+            "grounding": 0.4,
+            "personalization": 0.3,
+            "persuasiveness": 0.3
+        }
+    }
+]

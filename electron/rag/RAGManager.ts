@@ -133,7 +133,11 @@ export class RAGManager {
         const prompt = buildRAGPrompt(query, context.formattedContext, 'meeting', context.intent);
 
         // Stream response
-        const stream = this.llmHelper.streamChatWithGemini(prompt, undefined, undefined, true);
+        const stream = this.llmHelper.streamChatWithGemini({
+            message: query,
+            context: context.formattedContext,
+            systemPrompt: prompt,
+        });
 
         for await (const chunk of stream) {
             if (abortSignal?.aborted) break;
@@ -164,7 +168,11 @@ export class RAGManager {
         const prompt = buildRAGPrompt(query, context.formattedContext, 'global', context.intent);
 
         // Stream response
-        const stream = this.llmHelper.streamChatWithGemini(prompt, undefined, undefined, true);
+        const stream = this.llmHelper.streamChatWithGemini({
+            message: query,
+            context: context.formattedContext,
+            systemPrompt: prompt,
+        });
 
         for await (const chunk of stream) {
             if (abortSignal?.aborted) break;

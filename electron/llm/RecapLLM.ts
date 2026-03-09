@@ -17,7 +17,10 @@ export class RecapLLM {
         if (!context.trim()) return "";
         try {
             const prompt = await this.getEnrichedPrompt();
-            const stream = this.llmHelper.streamChat(context, undefined, undefined, prompt);
+            const stream = this.llmHelper.streamChat({
+                message: context,
+                systemPrompt: prompt
+            });
             let fullResponse = "";
             for await (const chunk of stream) fullResponse += chunk;
             return this.clampRecapResponse(fullResponse);
@@ -35,7 +38,10 @@ export class RecapLLM {
         try {
             const prompt = await this.getEnrichedPrompt();
             // Use our universal helper
-            yield* this.llmHelper.streamChat(context, undefined, undefined, prompt);
+            yield* this.llmHelper.streamChat({
+                message: context,
+                systemPrompt: prompt
+            });
         } catch (error) {
             console.error("[RecapLLM] Streaming generation failed:", error);
         }
@@ -52,11 +58,11 @@ export class RecapLLM {
         const isMeeting = creds.getIsMeetingMode();
 
         return injectUserContext(
-            UNIVERSAL_RECAP_PROMPT, 
-            resumeText, 
-            jdText, 
-            projectKnowledge, 
-            agendaText, 
+            UNIVERSAL_RECAP_PROMPT,
+            resumeText,
+            jdText,
+            projectKnowledge,
+            agendaText,
             isMeeting ? 'meeting' : 'interview'
         );
     }

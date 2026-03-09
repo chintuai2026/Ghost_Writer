@@ -88,7 +88,11 @@ ANSWER SHAPE: ${intentResult.answerShape}
             let outputTokens = 0;
             let fullResponse = "";
 
-            const stream = this.llmHelper.streamChat(fullMessage, imagePath, undefined, prompt);
+            const stream = this.llmHelper.streamChat({
+                message: fullMessage,
+                imagePath: imagePath,
+                systemPrompt: prompt
+            });
             for await (const chunk of stream) {
                 fullResponse += chunk;
                 yield chunk;
@@ -97,8 +101,8 @@ ANSWER SHAPE: ${intentResult.answerShape}
             // Estimate output tokens and track cost
             outputTokens = Math.ceil(fullResponse.length / 4);
             const currentModel = this.llmHelper.getCurrentModel();
-            if (currentModel) {
-                const provider = this.getProviderFromModel(currentModel);
+            const provider = this.llmHelper.getCurrentProvider();
+            if (currentModel && provider) {
                 costTracker.trackUsage(provider, currentModel, inputTokens, outputTokens).catch(err => {
                     console.error("Failed to track cost:", err);
                 });
@@ -108,17 +112,6 @@ ANSWER SHAPE: ${intentResult.answerShape}
             console.error("[WhatToAnswerLLM] Stream failed:", error);
             yield "Could you repeat that? I want to make sure I address your question properly.";
         }
-    }
-
-    private getProviderFromModel(model: string): string {
-        if (model.includes('gpt') || model.includes('openai')) return 'openai';
-        if (model.includes('claude')) return 'claude';
-        if (model.includes('gemini')) return 'gemini';
-        if (model.includes('groq') || model.includes('llama')) return 'groq';
-        if (model.includes('deepseek')) return 'deepseek';
-        if (model.includes('nvidia')) return 'nvidia';
-        if (model.includes('ollama')) return 'ollama';
-        return 'unknown';
     }
 
     /**

@@ -13,7 +13,10 @@ export class FollowUpQuestionsLLM {
     async generate(context: string): Promise<string> {
         try {
             const prompt = await this.getEnrichedPrompt();
-            const stream = this.llmHelper.streamChat(context, undefined, undefined, prompt);
+            const stream = this.llmHelper.streamChat({
+                message: context,
+                systemPrompt: prompt
+            });
             let full = "";
             for await (const chunk of stream) full += chunk;
             return full;
@@ -26,7 +29,10 @@ export class FollowUpQuestionsLLM {
     async *generateStream(context: string): AsyncGenerator<string> {
         try {
             const prompt = await this.getEnrichedPrompt();
-            yield* this.llmHelper.streamChat(context, undefined, undefined, prompt);
+            yield* this.llmHelper.streamChat({
+                message: context,
+                systemPrompt: prompt
+            });
         } catch (e) {
             console.error("[FollowUpQuestionsLLM] Stream Failed:", e);
         }
@@ -43,11 +49,11 @@ export class FollowUpQuestionsLLM {
         const isMeeting = creds.getIsMeetingMode();
 
         return injectUserContext(
-            UNIVERSAL_FOLLOW_UP_QUESTIONS_PROMPT, 
-            resumeText, 
-            jdText, 
-            projectKnowledge, 
-            agendaText, 
+            UNIVERSAL_FOLLOW_UP_QUESTIONS_PROMPT,
+            resumeText,
+            jdText,
+            projectKnowledge,
+            agendaText,
             isMeeting ? 'meeting' : 'interview'
         );
     }

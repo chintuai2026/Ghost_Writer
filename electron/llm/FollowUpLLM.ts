@@ -14,7 +14,11 @@ export class FollowUpLLM {
         try {
             const prompt = await this.getEnrichedPrompt();
             const message = `PREVIOUS ANSWER:\n${previousAnswer}\n\nREQUEST: ${refinementRequest}`;
-            const stream = this.llmHelper.streamChat(message, undefined, context, prompt);
+            const stream = this.llmHelper.streamChat({
+                message: message,
+                context: context,
+                systemPrompt: prompt
+            });
             let full = "";
             for await (const chunk of stream) full += chunk;
             return full;
@@ -28,7 +32,11 @@ export class FollowUpLLM {
         try {
             const prompt = await this.getEnrichedPrompt();
             const message = `PREVIOUS ANSWER:\n${previousAnswer}\n\nREQUEST: ${refinementRequest}`;
-            yield* this.llmHelper.streamChat(message, undefined, context, prompt);
+            yield* this.llmHelper.streamChat({
+                message: message,
+                context: context,
+                systemPrompt: prompt
+            });
         } catch (e) {
             console.error("[FollowUpLLM] Stream Failed:", e);
         }
@@ -45,11 +53,11 @@ export class FollowUpLLM {
         const isMeeting = creds.getIsMeetingMode();
 
         return injectUserContext(
-            UNIVERSAL_FOLLOWUP_PROMPT, 
-            resumeText, 
-            jdText, 
-            projectKnowledge, 
-            agendaText, 
+            UNIVERSAL_FOLLOWUP_PROMPT,
+            resumeText,
+            jdText,
+            projectKnowledge,
+            agendaText,
             isMeeting ? 'meeting' : 'interview'
         );
     }

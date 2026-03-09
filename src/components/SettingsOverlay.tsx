@@ -210,6 +210,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
     const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'uptodate' | 'error'>('idle');
     const [gpuInfo, setGpuInfo] = useState<{ name: string; vramGB: number; isNvidia: boolean; tier: string } | null>(null);
     const [audioFallbackActive, setAudioFallbackActive] = useState(false);
+    const [showStealthMatrix, setShowStealthMatrix] = useState(false);
     const themeDropdownRef = React.useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
@@ -861,46 +862,112 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                     <div className="space-y-6 animated fadeIn">
                                         <div className="space-y-3.5">
                                             {/* UndetectableToggle */}
-                                            <div className={`bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle flex items-center justify-between transition-all ${isUndetectable ? 'shadow-lg shadow-blue-500/10' : ''}`}>
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="flex items-center gap-2">
-                                                        {isUndetectable ? (
-                                                            <svg
-                                                                width="18"
-                                                                height="18"
-                                                                viewBox="0 0 24 24"
-                                                                fill="none"
-                                                                stroke="currentColor"
-                                                                strokeWidth="2"
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                                className="text-text-primary"
+                                            <div className="flex flex-col gap-3.5 bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle transition-all overflow-hidden">
+                                                <div className={`flex items-center justify-between transition-all ${isUndetectable ? 'shadow-lg shadow-blue-500/10' : ''}`}>
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex items-center gap-2">
+                                                            {isUndetectable ? (
+                                                                <svg
+                                                                    width="18"
+                                                                    height="18"
+                                                                    viewBox="0 0 24 24"
+                                                                    fill="none"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth="2"
+                                                                    strokeLinecap="round"
+                                                                    strokeLinejoin="round"
+                                                                    className="text-text-primary"
+                                                                >
+                                                                    <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" fill="currentColor" stroke="currentColor" />
+                                                                    <path d="M9 10h.01" stroke="var(--bg-item-surface)" strokeWidth="2.5" />
+                                                                    <path d="M15 10h.01" stroke="var(--bg-item-surface)" strokeWidth="2.5" />
+                                                                </svg>
+                                                            ) : (
+                                                                <Ghost size={18} className="text-text-primary" />
+                                                            )}
+                                                            <h3 className="text-lg font-bold text-text-primary">{isUndetectable ? 'Undetectable Mode' : 'Standard Mode'}</h3>
+                                                        </div>
+                                                        <p className="text-xs text-text-secondary">
+                                                            {isUndetectable
+                                                                ? 'Content protection and process disguise are active.'
+                                                                : 'Ghost Writer is visible to screen-sharing and recordings.'}
+                                                            <button
+                                                                onClick={() => setShowStealthMatrix(!showStealthMatrix)}
+                                                                className="ml-2 text-blue-400 hover:underline inline-flex items-center gap-1"
                                                             >
-                                                                <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" fill="currentColor" stroke="currentColor" />
-                                                                <path d="M9 10h.01" stroke="var(--bg-item-surface)" strokeWidth="2.5" />
-                                                                <path d="M15 10h.01" stroke="var(--bg-item-surface)" strokeWidth="2.5" />
-                                                            </svg>
-                                                        ) : (
-                                                            <Ghost size={18} className="text-text-primary" />
-                                                        )}
-                                                        <h3 className="text-lg font-bold text-text-primary">{isUndetectable ? 'Undetectable' : 'Detectable'}</h3>
+                                                                {showStealthMatrix ? 'Hide Details' : 'View Support Matrix'}
+                                                            </button>
+                                                        </p>
                                                     </div>
-                                                    <p className="text-xs text-text-secondary">
-                                                        Ghost Writer is currently {isUndetectable ? 'undetectable' : 'detectable'} by screen-sharing. <button className="text-blue-400 hover:underline">Supported apps here</button>
-                                                    </p>
+                                                    <div
+                                                        onClick={() => {
+                                                            const newState = !isUndetectable;
+                                                            setIsUndetectable(newState);
+                                                            window.electronAPI?.setUndetectable(newState);
+                                                            // Analytics: Undetectable Mode Toggle
+                                                            analytics.trackModeSelected(newState ? 'undetectable' : 'overlay');
+                                                        }}
+                                                        className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${isUndetectable ? 'bg-accent-primary' : 'bg-bg-toggle-switch border border-border-muted'}`}
+                                                    >
+                                                        <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${isUndetectable ? 'translate-x-5' : 'translate-x-0'}`} />
+                                                    </div>
                                                 </div>
-                                                <div
-                                                    onClick={() => {
-                                                        const newState = !isUndetectable;
-                                                        setIsUndetectable(newState);
-                                                        window.electronAPI?.setUndetectable(newState);
-                                                        // Analytics: Undetectable Mode Toggle
-                                                        analytics.trackModeSelected(newState ? 'undetectable' : 'overlay');
-                                                    }}
-                                                    className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${isUndetectable ? 'bg-accent-primary' : 'bg-bg-toggle-switch border border-border-muted'}`}
-                                                >
-                                                    <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${isUndetectable ? 'translate-x-5' : 'translate-x-0'}`} />
-                                                </div>
+
+                                                <AnimatePresence>
+                                                    {showStealthMatrix && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="border-t border-border-subtle pt-4 mt-2 overflow-hidden"
+                                                        >
+                                                            <div className="space-y-4">
+                                                                <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg flex gap-3 items-start">
+                                                                    <Info size={16} className="text-amber-500 mt-0.5 shrink-0" />
+                                                                    <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                                                                        <strong>Experimental:</strong> Ghost Writer can enable content protection and disguise settings, but real capture behavior still depends on the operating system, the conferencing app, and whether you share a window or the full screen. Validate your own setup before relying on it.
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <div className="space-y-2">
+                                                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-text-tertiary">Validation Status</h4>
+                                                                        <div className="space-y-1.5">
+                                                                            {[
+                                                                                { name: 'Window capture protection', status: 'App-dependent' },
+                                                                                { name: 'Full-screen sharing', status: 'Needs manual verification' },
+                                                                                { name: 'Screenshots / recording', status: 'OS-dependent' },
+                                                                                { name: 'Process disguise', status: 'Cosmetic only' }
+                                                                            ].map((item) => (
+                                                                                <div key={item.name} className="flex items-center justify-between text-[11px] gap-3">
+                                                                                    <span className="text-text-secondary">{item.name}</span>
+                                                                                    <span className="text-amber-300 font-bold text-right">{item.status}</span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-text-tertiary">What We Actually Do</h4>
+                                                                        <div className="space-y-1.5">
+                                                                            <div className="flex items-center justify-between text-[11px]">
+                                                                                <span className="text-text-secondary">Content protection flag</span>
+                                                                                <span className="text-text-primary font-bold">{isUndetectable ? 'Enabled' : 'Disabled'}</span>
+                                                                            </div>
+                                                                            <div className="flex items-center justify-between text-[11px]">
+                                                                                <span className="text-text-secondary">Tray / launcher visibility</span>
+                                                                                <span className="text-text-primary font-bold">{isUndetectable ? 'Reduced' : 'Normal'}</span>
+                                                                            </div>
+                                                                            <div className="flex items-center justify-between text-[11px]">
+                                                                                <span className="text-text-secondary">Capture outcome guarantee</span>
+                                                                                <span className="text-amber-300 font-bold">Not guaranteed</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
                                             </div>
 
                                             <div>

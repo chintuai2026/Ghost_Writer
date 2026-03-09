@@ -1,31 +1,40 @@
-/**
- * OpenAICompatProvider - Handles OpenAI, NVIDIA NIM, and DeepSeek
- * All three use the OpenAI SDK, so they share a common base pattern
- * Extracted from LLMHelper.ts for modularity
- */
-
 import OpenAI from "openai";
 import fs from "fs";
+import { ILLMProvider, ChatPayload } from "./ILLMProvider";
 
-export class OpenAICompatProvider {
+export class OpenAICompatProvider implements ILLMProvider {
     constructor(
         private client: OpenAI,
-        private model: string,
-        private providerName: string
+        private modelId: string,
+        public readonly name: string
     ) { }
+
+    public isAvailable(): boolean {
+        return !!this.client;
+    }
+
+    public supportsMultimodal(): boolean {
+        // Assume OpenAI/NVIDIA support vision if they are modern models
+        // DeepSeek reasoner (currently only text) is handled by route logic in LLMHelper
+        return this.modelId.includes('gpt-4o') || this.modelId.includes('vl');
+    }
 
     // =========================================================================
     // Non-Streaming Generation
     // =========================================================================
 
-    public async generate(userMessage: string, systemPrompt?: string, imagePath?: string): Promise<string> {
+    public async generate(payload: ChatPayload): Promise<string> {
+        const userMessage = payload.context
+            ? `CONTEXT:\n${payload.context}\n\nUSER QUESTION:\n${payload.message}`
+            : payload.message;
+
         const messages: any[] = [];
-        if (systemPrompt) {
-            messages.push({ role: "system", content: systemPrompt });
+        if (payload.systemPrompt) {
+            messages.push({ role: "system", content: payload.systemPrompt });
         }
 
-        if (imagePath) {
-            const imageData = await fs.promises.readFile(imagePath);
+        if (payload.imagePath) {
+            const imageData = await fs.promises.readFile(payload.imagePath);
             const base64Image = imageData.toString("base64");
             messages.push({
                 role: "user",
@@ -39,10 +48,10 @@ export class OpenAICompatProvider {
         }
 
         const response = await this.client.chat.completions.create({
-            model: this.model,
+            model: this.modelId,
             messages,
-            temperature: 0.4,
-            max_tokens: 8192,
+            temperature: payload.options?.temperature ?? 0.4,
+            max_tokens: payload.options?.maxTokens ?? 8192,
         });
 
         return response.choices[0]?.message?.content || "";
@@ -52,7 +61,19 @@ export class OpenAICompatProvider {
     // Streaming Generation
     // =========================================================================
 
-    public async * stream(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+    public async * stream(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
+        const userMessage = payload.context
+            ? `CONTEXT:\n${payload.context}\n\nUSER QUESTION:\n${payload.message}`
+            : payload.message;
+
+        if (payload.imagePath) {
+            yield* this.streamMultimodal(userMessage, payload.imagePath, payload.systemPrompt);
+        } else {
+            yield* this.streamInternal(userMessage, payload.systemPrompt);
+        }
+    }
+
+    private async * streamInternal(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
         const messages: any[] = [];
         if (systemPrompt) {
             messages.push({ role: "system", content: systemPrompt });
@@ -60,7 +81,7 @@ export class OpenAICompatProvider {
         messages.push({ role: "user", content: userMessage });
 
         const stream = await this.client.chat.completions.create({
-            model: this.model,
+            model: this.modelId,
             messages,
             stream: true,
             temperature: 0.4,
@@ -68,14 +89,19 @@ export class OpenAICompatProvider {
         });
 
         for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content;
+            const delta = chunk.choices[0]?.delta as any;
+            const reasoning = delta?.reasoning_content;
+            if (reasoning) {
+                yield `__THOUGHT__${reasoning}`;
+            }
+            const content = delta?.content;
             if (content) {
                 yield content;
             }
         }
     }
 
-    public async * streamMultimodal(userMessage: string, imagePath: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+    private async * streamMultimodal(userMessage: string, imagePath: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
         const imageData = await fs.promises.readFile(imagePath);
         const base64Image = imageData.toString("base64");
 
@@ -92,7 +118,7 @@ export class OpenAICompatProvider {
         });
 
         const stream = await this.client.chat.completions.create({
-            model: this.model,
+            model: this.modelId,
             messages,
             stream: true,
             temperature: 0.4,
@@ -100,7 +126,12 @@ export class OpenAICompatProvider {
         });
 
         for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content;
+            const delta = chunk.choices[0]?.delta as any;
+            const reasoning = delta?.reasoning_content;
+            if (reasoning) {
+                yield `__THOUGHT__${reasoning}`;
+            }
+            const content = delta?.content;
             if (content) {
                 yield content;
             }
@@ -114,7 +145,7 @@ export class OpenAICompatProvider {
     public async testConnection(): Promise<{ success: boolean; error?: string }> {
         try {
             const response = await this.client.chat.completions.create({
-                model: this.model,
+                model: this.modelId,
                 messages: [{ role: "user", content: "Hello" }],
                 max_tokens: 10,
                 stream: false,
@@ -129,10 +160,6 @@ export class OpenAICompatProvider {
     // Dynamic Model Resolution
     // =========================================================================
 
-    /**
-     * Fetch the latest available model from the provider's API
-     * Used for Groq-style providers that have dynamic model lists
-     */
     public static async resolveModel(
         apiKey: string,
         apiUrl: string,

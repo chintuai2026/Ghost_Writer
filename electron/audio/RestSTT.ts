@@ -94,7 +94,7 @@ const PROVIDER_CONFIGS: Record<RestSttProvider, ProviderConfigFactory> = {
 const MIN_BUFFER_BYTES = 16000;
 
 // Upload interval in milliseconds
-const UPLOAD_INTERVAL_MS = 3000;
+const UPLOAD_INTERVAL_MS = 2000;
 
 // Silence threshold - if RMS is below this, skip the upload
 const SILENCE_RMS_THRESHOLD = 50;

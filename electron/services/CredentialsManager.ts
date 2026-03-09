@@ -408,8 +408,16 @@ export class CredentialsManager {
 
     public setAirGapMode(enabled: boolean): void {
         this.credentials.airGapMode = enabled;
+        if (enabled) {
+            this.credentials.sttProvider = 'local-whisper';
+        }
         this.saveCredentials();
-        console.log(`[CredentialsManager] Air-Gap Mode set to: ${enabled}`);
+        console.log(`[CredentialsManager] Air-Gap Mode set to: ${enabled} (STT: ${this.credentials.sttProvider})`);
+
+        const { BrowserWindow } = require('electron');
+        BrowserWindow.getAllWindows().forEach((win: any) => {
+            win.webContents.send('air-gap-changed', enabled);
+        });
     }
 
     // License setters

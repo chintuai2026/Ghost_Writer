@@ -161,6 +161,7 @@ interface ElectronAPI {
   on: (channel: string, callback: (...args: any[]) => void) => () => void
 
   onUndetectableChanged: (callback: (state: boolean) => void) => () => void
+  onAirGapChanged: (callback: (enabled: boolean) => void) => () => void
 
   // Theme API
   getThemeMode: () => Promise<{ mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }>
@@ -714,6 +715,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on('undetectable-changed', subscription)
     return () => {
       ipcRenderer.removeListener('undetectable-changed', subscription)
+    }
+  },
+  onAirGapChanged: (callback: (enabled: boolean) => void) => {
+    const subscription = (_: any, enabled: boolean) => callback(enabled)
+    ipcRenderer.on('air-gap-changed', subscription)
+    return () => {
+      ipcRenderer.removeListener('air-gap-changed', subscription)
     }
   },
 

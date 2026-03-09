@@ -1023,7 +1023,11 @@ export class IntelligenceManager extends EventEmitter {
                 const groqTitlePrompt = GROQ_TITLE_PROMPT;
 
                 // Use robust Groq-first generation for title
-                const generatedTitle = await this.llmHelper.generateMeetingSummary(titlePrompt, data.context.substring(0, 10000), groqTitlePrompt);
+                const generatedTitle = await this.llmHelper.generateMeetingSummary({
+                    systemPrompt: titlePrompt,
+                    context: data.context.substring(0, 10000),
+                    groqSystemPrompt: groqTitlePrompt
+                });
                 if (generatedTitle) title = generatedTitle.replace(/["*]/g, '').trim();
             }
 
@@ -1055,7 +1059,11 @@ export class IntelligenceManager extends EventEmitter {
                 const groqSummaryPrompt = GROQ_SUMMARY_JSON_PROMPT; // Context is now removed from the template
 
                 // Use the new robust summary generation method (30k chars context)
-                const generatedSummary = await this.llmHelper.generateMeetingSummary(summaryPrompt, data.context.substring(0, 30000), groqSummaryPrompt);
+                const generatedSummary = await this.llmHelper.generateMeetingSummary({
+                    systemPrompt: summaryPrompt,
+                    context: data.context.substring(0, 30000),
+                    groqSystemPrompt: groqSummaryPrompt
+                });
 
                 if (generatedSummary) {
                     // Try to extract JSON - handle both raw JSON and markdown-wrapped

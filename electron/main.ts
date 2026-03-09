@@ -1199,11 +1199,17 @@ export class AppState {
     // If True (Stealth Mode): Hide Dock, Hide Tray (or standard 'stealth' behavior)
     // If False (Visible Mode): Show Dock, Show Tray
 
-    // Windows-only stealth mode
+    // Windows/macOS stealth mode
     if (state) {
+      if (process.platform === 'darwin') {
+        app.dock?.hide();
+      }
       this.hideTray();
       this._applyDisguise(this.disguiseMode);
     } else {
+      if (process.platform === 'darwin') {
+        app.dock?.show();
+      }
       this.showTray();
       this._applyDisguise('none');
     }
@@ -1226,6 +1232,13 @@ export class AppState {
   private _applyDisguise(mode: 'terminal' | 'settings' | 'activity' | 'none'): void {
     let appName = "Ghost Writer";
     let iconPath = "";
+    const defaultIconPath = process.platform === 'win32'
+      ? (app.isPackaged
+        ? path.join(process.resourcesPath, "assets/icons/win/icon.ico")
+        : path.resolve(__dirname, "../assets/icons/win/icon.ico"))
+      : (app.isPackaged
+        ? path.join(process.resourcesPath, "assets/icons/mac/icon.png")
+        : path.resolve(__dirname, "../assets/icons/mac/icon.png"));
 
     switch (mode) {
       case 'terminal':
@@ -1248,9 +1261,7 @@ export class AppState {
         break;
       case 'none':
         appName = "Ghost Writer";
-        iconPath = app.isPackaged
-          ? path.join(process.resourcesPath, "icon.icns")
-          : path.resolve(__dirname, "../assets/icon.icns");
+        iconPath = defaultIconPath;
         break;
     }
 

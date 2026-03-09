@@ -23,6 +23,11 @@ const ACKNOWLEDGEMENTS = new Set([
     'cool', 'great', 'nice', 'perfect', 'alright', 'all right'
 ]);
 
+const NON_SPEECH_TURN_PATTERNS = [
+    /^\[(?:MUSIC(?: PLAYING)?|PHONE RINGING|NOISE|END PLAYBACK|APPLAUSE|LAUGHTER|INAUDIBLE|SILENCE|BLANK_AUDIO)\]$/i,
+    /^\((?:music|upbeat music|noise|mouse clicking|keyboard clicking|clicking|tapping|phone ringing|computer chimes|air whooshing)\)$/i,
+];
+
 /**
  * Clean a single turn's text
  * Removes fillers, acknowledgements, and cleans up formatting
@@ -57,6 +62,10 @@ function cleanText(text: string, preserveCase: boolean = false): string {
  * Check if a turn is meaningful enough to keep
  */
 function isMeaningfulTurn(turn: TranscriptTurn, cleanedText: string): boolean {
+    if (NON_SPEECH_TURN_PATTERNS.some((pattern) => pattern.test(turn.text.trim()))) {
+        return false;
+    }
+
     // Always keep interviewer speech (priority)
     if (turn.role === 'interviewer' && cleanedText.length >= 5) {
         return true;

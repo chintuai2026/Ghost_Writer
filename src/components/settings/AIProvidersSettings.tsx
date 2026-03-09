@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, AlertCircle, CheckCircle, Save, ChevronDown, Check, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Edit2, AlertCircle, CheckCircle, Save, ChevronDown, Check, RefreshCw, Zap } from 'lucide-react';
 import { validateCurl } from '../../lib/curl-validator';
 
 interface CustomProvider {
@@ -596,7 +596,39 @@ export const AIProvidersSettings: React.FC = () => {
 
                 {isEditingCustom ? (
                     <div className="bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle animated fadeIn">
-                        <h4 className="text-sm font-bold text-text-primary mb-4">{editingProvider ? 'Edit Provider' : 'New Provider'}</h4>
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-sm font-bold text-text-primary">{editingProvider ? 'Edit Provider' : 'New Provider'}</h4>
+                            <button
+                                onClick={async () => {
+                                    if (!customCurl.trim()) return;
+                                    setTestingStatus(prev => ({ ...prev, custom: true }));
+                                    setTestResult(prev => ({ ...prev, custom: null }));
+                                    try {
+                                        // @ts-ignore
+                                        const result = await window.electronAPI.testLlmConnection('custom', customCurl);
+                                        setTestResult(prev => ({ ...prev, custom: result }));
+                                    } catch (e: any) {
+                                        setTestResult(prev => ({ ...prev, custom: { success: false, error: e.message } }));
+                                    } finally {
+                                        setTestingStatus(prev => ({ ...prev, custom: false }));
+                                    }
+                                }}
+                                disabled={testingStatus.custom || !customCurl.trim()}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-bg-input hover:bg-bg-elevated border border-border-subtle rounded-lg text-xs font-medium text-text-primary transition-colors disabled:opacity-50"
+                            >
+                                {testingStatus.custom ? (
+                                    <>
+                                        <RefreshCw size={14} className="animate-spin" />
+                                        Testing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Zap size={14} />
+                                        Test Connection
+                                    </>
+                                )}
+                            </button>
+                        </div>
 
                         <div className="space-y-4">
                             <div>
@@ -681,8 +713,15 @@ export const AIProvidersSettings: React.FC = () => {
                                 </div>
                             </div>
 
+                            {testResult.custom && (
+                                <div className={`flex items-start gap-2 p-3 ${testResult.custom.success ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'} border rounded-lg text-xs`}>
+                                    {testResult.custom.success ? <CheckCircle size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
+                                    <span>{testResult.custom.success ? 'Connection successful! The provider is responding correctly.' : `Connection failed: ${testResult.custom.error}`}</span>
+                                </div>
+                            )}
+
                             {curlError && (
-                                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs text-left">
                                     <AlertCircle size={14} className="shrink-0 mt-0.5" />
                                     <span>{curlError}</span>
                                 </div>

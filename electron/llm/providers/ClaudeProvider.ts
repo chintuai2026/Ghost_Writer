@@ -1,15 +1,35 @@
-/**
- * ClaudeProvider - Handles all Anthropic Claude generation and streaming
- * Extracted from LLMHelper.ts for modularity
- */
-
 import { Anthropic } from "@anthropic-ai/sdk";
 import fs from "fs";
+import { ILLMProvider, ChatPayload } from "./ILLMProvider";
 
 let CLAUDE_MODEL = "claude-3-5-sonnet-latest";
 
-export class ClaudeProvider {
+export class ClaudeProvider implements ILLMProvider {
+    readonly name = "Claude";
+
     constructor(private client: Anthropic) { }
+
+    public isAvailable(): boolean {
+        return !!this.client;
+    }
+
+    public supportsMultimodal(): boolean {
+        return true;
+    }
+
+    public async testConnection(): Promise<{ success: boolean; error?: string }> {
+        try {
+            const response = await this.client.messages.create({
+                model: CLAUDE_MODEL,
+                max_tokens: 10,
+                messages: [{ role: "user", content: "Say hello" }]
+            });
+            const block = response?.content?.[0];
+            return (block && 'text' in block && block.text) ? { success: true } : { success: false, error: "Empty response" };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
 
     public static getModel(): string { return CLAUDE_MODEL; }
     public static setModel(model: string): void { CLAUDE_MODEL = model; }
@@ -18,10 +38,14 @@ export class ClaudeProvider {
     // Non-Streaming Generation
     // =========================================================================
 
-    public async generate(userMessage: string, systemPrompt?: string, imagePath?: string): Promise<string> {
+    public async generate(payload: ChatPayload): Promise<string> {
+        const userMessage = payload.context
+            ? `CONTEXT:\n${payload.context}\n\nUSER QUESTION:\n${payload.message}`
+            : payload.message;
+
         const content: any[] = [];
-        if (imagePath) {
-            const imageData = await fs.promises.readFile(imagePath);
+        if (payload.imagePath) {
+            const imageData = await fs.promises.readFile(payload.imagePath);
             const base64Image = imageData.toString("base64");
             content.push({
                 type: "image",
@@ -37,7 +61,7 @@ export class ClaudeProvider {
         const response = await this.client.messages.create({
             model: CLAUDE_MODEL,
             max_tokens: 8192,
-            ...(systemPrompt ? { system: systemPrompt } : {}),
+            ...(payload.systemPrompt ? { system: payload.systemPrompt } : {}),
             messages: [{ role: "user", content }],
         });
 
@@ -49,7 +73,19 @@ export class ClaudeProvider {
     // Streaming Generation
     // =========================================================================
 
-    public async * stream(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
+    public async * stream(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
+        const userMessage = payload.context
+            ? `CONTEXT:\n${payload.context}\n\nUSER QUESTION:\n${payload.message}`
+            : payload.message;
+
+        if (payload.imagePath) {
+            yield* this.streamMultimodal(userMessage, payload.imagePath, payload.systemPrompt);
+        } else {
+            yield* this.streamInternal(userMessage, payload.systemPrompt);
+        }
+    }
+
+    private async * streamInternal(userMessage: string, systemPrompt?: string): AsyncGenerator<string, void, unknown> {
         const stream = await this.client.messages.stream({
             model: CLAUDE_MODEL,
             max_tokens: 8192,

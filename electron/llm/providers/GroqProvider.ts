@@ -1,17 +1,50 @@
-/**
- * GroqProvider - Handles Groq API generation and streaming
- * Extracted from LLMHelper.ts for modularity
- */
-
 import Groq from "groq-sdk";
+import { ILLMProvider, ChatPayload } from "./ILLMProvider";
 
 let GROQ_MODEL = "llama-3.3-70b-versatile";
 
-export class GroqProvider {
+export class GroqProvider implements ILLMProvider {
+    readonly name = "Groq";
+
     constructor(private client: Groq) { }
+
+    public isAvailable(): boolean {
+        return !!this.client;
+    }
+
+    public supportsMultimodal(): boolean {
+        return false;
+    }
+
+    public async testConnection(): Promise<{ success: boolean; error?: string }> {
+        try {
+            const response = await this.client.chat.completions.create({
+                model: GROQ_MODEL,
+                messages: [{ role: "user", content: "Say hello" }],
+                max_tokens: 10
+            });
+            return response?.choices?.[0]?.message?.content ? { success: true } : { success: false, error: "Empty response" };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
 
     public static getModel(): string { return GROQ_MODEL; }
     public static setModel(model: string): void { GROQ_MODEL = model; }
+
+    private buildMessages(payload: ChatPayload): Array<{ role: "system" | "user"; content: string }> {
+        const messages: Array<{ role: "system" | "user"; content: string }> = [];
+        const userMessage = payload.context
+            ? `CONTEXT:\n${payload.context}\n\nUSER QUESTION:\n${payload.message}`
+            : payload.message;
+
+        if (payload.systemPrompt) {
+            messages.push({ role: "system", content: payload.systemPrompt });
+        }
+
+        messages.push({ role: "user", content: userMessage });
+        return messages;
+    }
 
     // =========================================================================
     // Dynamic Model Resolution
@@ -45,12 +78,12 @@ export class GroqProvider {
     // Non-Streaming Generation
     // =========================================================================
 
-    public async generate(fullMessage: string): Promise<string> {
+    public async generate(payload: ChatPayload): Promise<string> {
         const response = await this.client.chat.completions.create({
             model: GROQ_MODEL,
-            messages: [{ role: "user", content: fullMessage }],
-            temperature: 0.4,
-            max_tokens: 8192,
+            messages: this.buildMessages(payload),
+            temperature: payload.options?.temperature ?? 0.4,
+            max_tokens: payload.options?.maxTokens ?? 8192,
             stream: false
         });
 
@@ -61,13 +94,13 @@ export class GroqProvider {
     // Streaming Generation
     // =========================================================================
 
-    public async * stream(fullMessage: string): AsyncGenerator<string, void, unknown> {
+    public async * stream(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
         const stream = await this.client.chat.completions.create({
             model: GROQ_MODEL,
-            messages: [{ role: "user", content: fullMessage }],
+            messages: this.buildMessages(payload),
             stream: true,
-            temperature: 0.4,
-            max_tokens: 8192,
+            temperature: payload.options?.temperature ?? 0.4,
+            max_tokens: payload.options?.maxTokens ?? 8192,
         });
 
         for await (const chunk of stream) {
@@ -80,24 +113,19 @@ export class GroqProvider {
 
     /**
      * Stream with Groq, falling back to Gemini if Groq fails
-     * Used by mode-specific LLMs (RecapLLM, FollowUpLLM, WhatToAnswerLLM)
+     * Updated to handle ChatPayload for consistency
      */
     public async * streamWithGeminiFallback(
-        groqMessage: string,
-        geminiMessage: string,
-        geminiStreamFn: (msg: string, model: string) => AsyncGenerator<string, void, unknown>,
-        config?: { temperature?: number; maxTokens?: number }
+        payload: ChatPayload,
+        geminiStreamFn: (p: ChatPayload) => AsyncGenerator<string, void, unknown>
     ): AsyncGenerator<string, void, unknown> {
-        const temp = config?.temperature ?? 0.4;
-        const maxTok = config?.maxTokens ?? 8192;
-
         try {
             const stream = await this.client.chat.completions.create({
                 model: GROQ_MODEL,
-                messages: [{ role: "user", content: groqMessage }],
+                messages: this.buildMessages(payload),
                 stream: true,
-                temperature: temp,
-                max_tokens: maxTok,
+                temperature: payload.options?.temperature ?? 0.4,
+                max_tokens: payload.options?.maxTokens ?? 8192,
             });
 
             let hasContent = false;
@@ -116,7 +144,6 @@ export class GroqProvider {
         }
 
         // Fallback to Gemini
-        const { GEMINI_FLASH_MODEL } = require("../prompts");
-        yield* geminiStreamFn(geminiMessage, GEMINI_FLASH_MODEL);
+        yield* geminiStreamFn(payload);
     }
 }

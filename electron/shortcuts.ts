@@ -14,11 +14,26 @@ export class ShortcutsHelper {
   }
 
   public registerGlobalShortcuts(): void {
+    const registerShortcut = (
+      accelerator: string,
+      handler: () => void | Promise<void>,
+      label: string
+    ): boolean => {
+      globalShortcut.register(accelerator, handler)
+      const registered = globalShortcut.isRegistered(accelerator)
+
+      if (!registered) {
+        console.warn(`[Shortcuts] Failed to register ${label} (${accelerator})`)
+      }
+
+      return registered
+    }
+
     // Add global shortcut to show/center window
-    globalShortcut.register("CommandOrControl+Shift+Space", () => {
+    registerShortcut("CommandOrControl+Shift+Space", () => {
       // console.log("Show/Center window shortcut pressed...")
       this.appState.centerAndShowWindow()
-    })
+    }, "show window")
 
     // Screenshot shortcut — try Ctrl+H first, fall back to Ctrl+Shift+H if it's taken
     const screenshotHandler = async () => {
@@ -51,8 +66,7 @@ export class ShortcutsHelper {
     }
 
     const tryRegister = (accelerator: string): boolean => {
-      globalShortcut.register(accelerator, screenshotHandler)
-      return globalShortcut.isRegistered(accelerator)
+      return registerShortcut(accelerator, screenshotHandler, "screenshot")
     }
 
     if (tryRegister("CommandOrControl+H")) {
@@ -72,11 +86,11 @@ export class ShortcutsHelper {
 
 
 
-    globalShortcut.register("CommandOrControl+Enter", async () => {
+    registerShortcut("CommandOrControl+Enter", async () => {
       await this.appState.processingHelper.processScreenshots()
-    })
+    }, "process screenshots")
 
-    globalShortcut.register("CommandOrControl+R", () => {
+    registerShortcut("CommandOrControl+R", () => {
       // console.log(
       //   "Command + R pressed. Canceling requests and resetting queues..."
       // )
@@ -97,59 +111,59 @@ export class ShortcutsHelper {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("reset-view")
       }
-    })
+    }, "reset session")
 
     // New shortcuts for moving the window
-    globalShortcut.register("CommandOrControl+Left", () => {
+    registerShortcut("CommandOrControl+Left", () => {
       // console.log("Command/Ctrl + Left pressed. Moving window left.")
       this.appState.moveWindowLeft()
-    })
+    }, "move window left")
 
-    globalShortcut.register("CommandOrControl+Right", () => {
+    registerShortcut("CommandOrControl+Right", () => {
       // console.log("Command/Ctrl + Right pressed. Moving window right.")
       this.appState.moveWindowRight()
-    })
-    globalShortcut.register("CommandOrControl+Down", () => {
+    }, "move window right")
+    registerShortcut("CommandOrControl+Down", () => {
       // console.log("Command/Ctrl + down pressed. Moving window down.")
       this.appState.moveWindowDown()
-    })
-    globalShortcut.register("CommandOrControl+Up", () => {
+    }, "move window down")
+    registerShortcut("CommandOrControl+Up", () => {
       // console.log("Command/Ctrl + Up pressed. Moving window Up.")
       this.appState.moveWindowUp()
-    })
+    }, "move window up")
 
-    globalShortcut.register("CommandOrControl+B", () => {
+    registerShortcut("CommandOrControl+B", () => {
       this.handleToggleVisibility();
-    });
+    }, "toggle visibility");
 
     // Alt+G: Alias for Toggle Visibility
-    globalShortcut.register("Alt+G", () => {
+    registerShortcut("Alt+G", () => {
       this.handleToggleVisibility();
-    });
+    }, "toggle visibility alias");
 
     // F8: "What to answer" / Ask AI
-    globalShortcut.register("F8", async () => {
+    registerShortcut("F8", async () => {
       await this.handleQuickAnswer();
-    });
+    }, "quick answer");
 
     // Ctrl+J: Legacy alias for Quick Answer
-    globalShortcut.register("CommandOrControl+J", async () => {
+    registerShortcut("CommandOrControl+J", async () => {
       await this.handleQuickAnswer();
-    });
+    }, "quick answer alias");
 
     // F9: Start/Stop transcription (Toggle Meeting)
-    globalShortcut.register("F9", async () => {
+    registerShortcut("F9", async () => {
       if (this.appState.getIsMeetingActive()) {
         await this.appState.endMeeting();
       } else {
         await this.appState.startMeeting();
       }
-    });
+    }, "toggle meeting");
 
     // Alt+C: Reset/Cancel (Alias for Cmd+R)
-    globalShortcut.register("Alt+C", () => {
+    registerShortcut("Alt+C", () => {
       this.handleResetSession();
-    });
+    }, "reset session alias");
 
     // Unregister shortcuts when quitting
     app.on("will-quit", () => {
@@ -158,10 +172,19 @@ export class ShortcutsHelper {
   }
 
   private async handleQuickAnswer(): Promise<void> {
-    const overlayWindow = this.appState.getWindowHelper().getOverlayWindow();
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('quick-answer');
+    const windowHelper = this.appState.getWindowHelper();
+    const candidateWindows = [
+      windowHelper.getMainWindow(),
+      windowHelper.getLauncherWindow(),
+      windowHelper.getOverlayWindow()
+    ].filter((window, index, windows): window is BrowserWindow => {
+      return !!window && !window.isDestroyed() && windows.indexOf(window) === index;
+    });
+
+    for (const window of candidateWindows) {
+      window.webContents.send('quick-answer');
     }
+
     try {
       await this.appState.getIntelligenceManager().runWhatShouldISay();
     } catch (err) {

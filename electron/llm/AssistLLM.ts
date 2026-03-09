@@ -48,12 +48,11 @@ export class AssistLLM {
             // providing a specific instruction as message, using UNIVERSAL_ASSIST_PROMPT as system prompt
             const instruction = "Briefly summarize what is happening right now in 1-2 sentences. Do not give advice, just observation.";
 
-            return await this.llmHelper.chat(
-                instruction,
-                undefined, // no image
-                context,
-                prompt
-            );
+            return await this.llmHelper.chat({
+                message: instruction,
+                context: context,
+                systemPrompt: prompt
+            });
 
         } catch (error) {
             console.error("[AssistLLM] Generation failed:", error);

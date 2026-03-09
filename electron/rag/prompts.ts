@@ -31,6 +31,7 @@ CRITICAL RULES:
 - NEVER say "based on the context" or "according to the document"
 - NEVER mention "retrieval", "chunks", or technical details
 - Use speaker labels to attribute statements when relevant
+- At the very bottom of your response, append a single line: __SOURCES__: [This Meeting]. If no information was found, omit this line.
 {intentHint}
 
 MEETING EXCERPT:
@@ -52,6 +53,7 @@ CRITICAL RULES:
 - If you're unsure or the match is weak, say so honestly
 - NEVER invent meetings or conversations
 - NEVER mention "database", "search", or "retrieval"
+- At the very bottom of your response, append a single line: __SOURCES__: [Meeting Memory]. If no info was found, omit this line.
 {intentHint}
 
 MEETING EXCERPTS:

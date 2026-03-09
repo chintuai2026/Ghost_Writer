@@ -140,6 +140,7 @@ export interface ElectronAPI {
   on: (channel: string, callback: (...args: any[]) => void) => () => void;
 
   onUndetectableChanged: (callback: (state: boolean) => void) => () => void;
+  onAirGapChanged: (callback: (enabled: boolean) => void) => () => void;
   onLicenseStatusUpdated: (callback: (state: any) => void) => () => void;
 
   onMeetingsUpdated: (callback: () => void) => () => void

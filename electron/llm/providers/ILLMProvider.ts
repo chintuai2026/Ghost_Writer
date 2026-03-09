@@ -3,6 +3,19 @@
  * Every provider must implement these methods to be pluggable into LLMHelper
  */
 
+export interface ChatPayload {
+    message: string;
+    systemPrompt?: string;
+    imagePath?: string;
+    context?: string;
+    options?: {
+        temperature?: number;
+        maxTokens?: number;
+        skipSystemPrompt?: boolean;
+        alternateGroqMessage?: string;
+    };
+}
+
 export interface ILLMProvider {
     /** Human-readable provider name (e.g. "Gemini", "Ollama") */
     readonly name: string;
@@ -14,10 +27,10 @@ export interface ILLMProvider {
     supportsMultimodal(): boolean;
 
     /** Non-streaming generation */
-    generate(userMessage: string, systemPrompt?: string, imagePath?: string): Promise<string>;
+    generate(payload: ChatPayload): Promise<string>;
 
     /** Streaming generation */
-    stream(userMessage: string, systemPrompt?: string, imagePath?: string): AsyncGenerator<string, void, unknown>;
+    stream(payload: ChatPayload): AsyncGenerator<string, void, unknown>;
 
     /** Test connection to the provider */
     testConnection(): Promise<{ success: boolean; error?: string }>;

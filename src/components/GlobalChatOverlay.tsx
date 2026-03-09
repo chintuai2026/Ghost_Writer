@@ -11,7 +11,11 @@ interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
+    reasoning?: string;
+    sources?: string[];
     isStreaming?: boolean;
+    provider?: string;
+    model?: string;
 }
 
 interface GlobalChatOverlayProps {
@@ -61,8 +65,17 @@ const UserMessage: React.FC<{ content: string }> = ({ content }) => (
     </motion.div>
 );
 
-const AssistantMessage: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming }) => {
+const AssistantMessage: React.FC<{
+    content: string;
+    reasoning?: string;
+    sources?: string[];
+    isStreaming?: boolean;
+    model?: string;
+    provider?: string;
+    onRefine?: (request: string) => void;
+}> = ({ content, reasoning, sources, isStreaming, model, provider, onRefine }) => {
     const [copied, setCopied] = useState(false);
+    const [showReasoning, setShowReasoning] = useState(true);
 
     const handleCopy = async () => {
         try {
@@ -79,9 +92,41 @@ const AssistantMessage: React.FC<{ content: string; isStreaming?: boolean }> = (
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.15 }}
-            className="flex flex-col items-start mb-6"
+            className="flex flex-col items-start mb-8 group"
         >
-            <div className="text-text-primary text-[15px] leading-relaxed max-w-[85%]">
+            {/* Reasoning / Thought Process */}
+            <AnimatePresence>
+                {reasoning && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="mb-3 w-full max-w-[90%]"
+                    >
+                        <button
+                            onClick={() => setShowReasoning(!showReasoning)}
+                            className="flex items-center gap-2 mb-2 text-[10px] font-black uppercase tracking-widest text-text-tertiary/60 hover:text-text-secondary transition-colors"
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'bg-amber-500 animate-pulse' : 'bg-text-tertiary'}`} />
+                            {isStreaming ? 'Thinking...' : 'Reasoning Process'}
+                        </button>
+                        {showReasoning && (
+                            <div className="pl-3 border-l-2 border-white/5 text-[13px] text-text-tertiary/80 leading-relaxed font-serif italic whitespace-pre-wrap">
+                                {reasoning}
+                                {isStreaming && !content && (
+                                    <motion.span
+                                        className="inline-block w-1.5 h-1.5 bg-amber-500/50 rounded-full ml-1"
+                                        animate={{ opacity: [1, 0.3, 1] }}
+                                        transition={{ duration: 1, repeat: Infinity }}
+                                    />
+                                )}
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Final Answer */}
+            <div className={`text-text-primary text-[15px] leading-relaxed max-w-[90%] transition-opacity duration-300 ${isStreaming && reasoning && !content ? 'opacity-40' : 'opacity-100'}`}>
                 {content}
                 {isStreaming && (
                     <motion.span
@@ -91,14 +136,62 @@ const AssistantMessage: React.FC<{ content: string; isStreaming?: boolean }> = (
                     />
                 )}
             </div>
-            {!isStreaming && content && (
-                <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-2 mt-3 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
-                >
-                    {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                    {copied ? 'Copied' : 'Copy message'}
-                </button>
+
+            {/* Meta & Actions */}
+            {!isStreaming && (
+                <div className="flex items-center gap-4 mt-4">
+                    <button
+                        onClick={handleCopy}
+                        className="flex items-center gap-2 text-[11px] font-bold text-text-tertiary hover:text-text-secondary transition-colors"
+                    >
+                        {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                        {copied ? 'COPIED' : 'COPY'}
+                    </button>
+
+                    {model && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 rounded-md border border-white/5">
+                            <Globe size={10} className="text-text-tertiary" />
+                            <span className="text-[9px] font-black text-text-tertiary uppercase tracking-wider">
+                                {provider ? `${provider} / ${model}` : model}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Sources Badge */}
+                    {sources && sources.length > 0 && (
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            {sources.map((source, i) => (
+                                <div key={i} className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] font-black uppercase tracking-widest rounded border border-emerald-500/20">
+                                    {source}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Smart Refinement Actions */}
+            {!isStreaming && onRefine && (
+                <div className="flex flex-wrap gap-2 mt-3 animated fadeInUp">
+                    <button
+                        onClick={() => onRefine("Make this response much shorter and more concise (natural spoken paragraphs).")}
+                        className="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded-full text-[10px] font-bold text-text-tertiary transition-all"
+                    >
+                        Shorten
+                    </button>
+                    <button
+                        onClick={() => onRefine("Explain this in more depth with technical specifics.")}
+                        className="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded-full text-[10px] font-bold text-text-tertiary transition-all"
+                    >
+                        Deep Dive
+                    </button>
+                    <button
+                        onClick={() => onRefine("Rephrase this to sound more professional and executive-level.")}
+                        className="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded-full text-[10px] font-bold text-text-tertiary transition-all"
+                    >
+                        Professional Tone
+                    </button>
+                </div>
             )}
         </motion.div>
     );
@@ -120,9 +213,21 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [query, setQuery] = useState('');
     const [attachedImage, setAttachedImage] = useState<{ path: string; preview: string } | null>(null);
+    const [llmConfig, setLlmConfig] = useState<{ provider: string; model: string; isAirGap?: boolean } | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatWindowRef = useRef<HTMLDivElement>(null);
+
+    // Fetch config on open
+    useEffect(() => {
+        if (isOpen) {
+            window.electronAPI?.getCurrentLlmConfig().then(config => {
+                window.electronAPI?.getAirGapMode().then(airGap => {
+                    setLlmConfig({ ...config, isAirGap: airGap });
+                });
+            });
+        }
+    }, [isOpen]);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -217,17 +322,38 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                 id: assistantMessageId,
                 role: 'assistant',
                 content: '',
-                isStreaming: true
+                reasoning: '',
+                isStreaming: true,
+                model: llmConfig?.model,
+                provider: llmConfig?.provider
             }]);
 
             // Set up RAG streaming listeners
             const tokenCleanup = window.electronAPI?.onRAGStreamChunk((data: { chunk: string }) => {
                 setChatState('streaming_response');
-                setMessages(prev => prev.map(msg =>
-                    msg.id === assistantMessageId
-                        ? { ...msg, content: msg.content + data.chunk }
-                        : msg
-                ));
+                setMessages(prev => prev.map(msg => {
+                    if (msg.id !== assistantMessageId) return msg;
+
+                    let chunk = data.chunk;
+
+                    // Handle Reasoning Prefix
+                    if (chunk.startsWith('__THOUGHT__')) {
+                        return { ...msg, reasoning: (msg.reasoning || '') + chunk.replace('__THOUGHT__', '') };
+                    }
+
+                    // Handle Sources Detection (End of stream usually)
+                    if (chunk.includes('__SOURCES__:')) {
+                        const parts = chunk.split('__SOURCES__:');
+                        const sourcePart = parts[1].replace('[', '').replace(']', '').split(',').map(s => s.trim());
+                        return {
+                            ...msg,
+                            content: msg.content + parts[0],
+                            sources: [...(msg.sources || []), ...sourcePart]
+                        };
+                    }
+
+                    return { ...msg, content: msg.content + chunk };
+                }));
             });
 
             const doneCleanup = window.electronAPI?.onRAGStreamComplete(() => {
@@ -262,14 +388,30 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                 doneCleanup?.();
                 errorCleanup?.();
 
-                // Setup fallback listeners (Standard Gemini)
+                // Setup fallback listeners (Standard Chat System)
                 const oldTokenCleanup = window.electronAPI?.onGeminiStreamToken((token: string) => {
                     setChatState('streaming_response');
-                    setMessages(prev => prev.map(msg =>
-                        msg.id === assistantMessageId
-                            ? { ...msg, content: msg.content + token }
-                            : msg
-                    ));
+                    setMessages(prev => prev.map(msg => {
+                        if (msg.id !== assistantMessageId) return msg;
+
+                        // Handle Reasoning Prefix
+                        if (token.startsWith('__THOUGHT__')) {
+                            return { ...msg, reasoning: (msg.reasoning || '') + token.replace('__THOUGHT__', '') };
+                        }
+
+                        // Handle Sources Detection
+                        if (token.includes('__SOURCES__:')) {
+                            const parts = token.split('__SOURCES__:');
+                            const sourcePart = parts[1].replace('[', '').replace(']', '').split(',').map(s => s.trim());
+                            return {
+                                ...msg,
+                                content: msg.content + parts[0],
+                                sources: [...(msg.sources || []), ...sourcePart]
+                            };
+                        }
+
+                        return { ...msg, content: msg.content + token };
+                    }));
                 });
 
                 const oldDoneCleanup = window.electronAPI?.onGeminiStreamDone(() => {
@@ -285,7 +427,7 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                 });
 
                 const oldErrorCleanup = window.electronAPI?.onGeminiStreamError((error: string) => {
-                    console.error('[GlobalChat] Gemini stream error:', error);
+                    console.error('[GlobalChat] Stream error:', error);
                     setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId));
                     setErrorMessage("Couldn't get a response. Please check your settings.");
                     setChatState('error');
@@ -304,7 +446,11 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
             setErrorMessage("Something went wrong. Please try again.");
             setChatState('error');
         }
-    }, [chatState]);
+    }, [chatState, llmConfig, attachedImage]);
+
+    const handleRefine = useCallback((request: string) => {
+        submitQuestion(request);
+    }, [submitQuestion]);
 
     return (
         <AnimatePresence
@@ -351,8 +497,17 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                                     <img src={ghostWriterIcon} className="w-3.5 h-3.5 opacity-50" alt="logo" />
                                 </div>
                                 <div className="flex flex-col">
-                                    <span className="text-[11px] font-black uppercase tracking-[0.2em] text-text-primary">Global Intelligence</span>
-                                    <span className="text-[9px] font-bold text-text-tertiary uppercase tracking-wider">Metadata Synthesis</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-text-primary">Global Intelligence</span>
+                                        {llmConfig?.isAirGap && (
+                                            <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-tighter rounded border border-emerald-500/30">
+                                                Air-Gap
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="text-[9px] font-bold text-text-tertiary uppercase tracking-wider">
+                                        {llmConfig ? `${llmConfig.provider} / ${llmConfig.model}` : 'Metadata Synthesis'}
+                                    </span>
                                 </div>
                             </div>
                             <button
@@ -368,7 +523,16 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                             {messages.map((msg) => (
                                 msg.role === 'user'
                                     ? <UserMessage key={msg.id} content={msg.content} />
-                                    : <AssistantMessage key={msg.id} content={msg.content} isStreaming={msg.isStreaming} />
+                                    : <AssistantMessage
+                                        key={msg.id}
+                                        content={msg.content}
+                                        reasoning={msg.reasoning}
+                                        sources={msg.sources}
+                                        isStreaming={msg.isStreaming}
+                                        model={msg.model}
+                                        provider={msg.provider}
+                                        onRefine={handleRefine}
+                                    />
                             ))}
 
                             {chatState === 'waiting_for_llm' && <TypingIndicator />}
@@ -395,7 +559,7 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     onKeyDown={handleInputKeyDown}
-                                    placeholder="Global semantic query..."
+                                    placeholder={llmConfig?.isAirGap ? "Local semantic query..." : "Global semantic query..."}
                                     className="w-full pl-6 pr-14 py-4 bg-white/5 backdrop-blur-3xl border border-white/10 rounded-2xl text-[14px] text-white placeholder-text-tertiary/40 focus:outline-none focus:border-white/20 transition-all duration-500 shadow-2xl font-medium"
                                 />
 

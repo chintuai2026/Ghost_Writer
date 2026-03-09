@@ -55,10 +55,13 @@ export function registerCalendarEmailHandlers(appState: AppState): void {
 
       const contextString = buildFollowUpEmailPromptInput(input);
 
-      const geminiPrompt = `${FOLLOWUP_EMAIL_PROMPT}\n\nMEETING DETAILS:\n${contextString}`;
-      const groqPrompt = `${GROQ_FOLLOWUP_EMAIL_PROMPT}\n\nMEETING DETAILS:\n${contextString}`;
-
-      const emailBody = await llmHelper.chatWithGemini(geminiPrompt, undefined, undefined, true, groqPrompt);
+      const emailBody = await llmHelper.chatWithGemini({
+        message: contextString,
+        systemPrompt: FOLLOWUP_EMAIL_PROMPT,
+        options: {
+          alternateGroqMessage: `${GROQ_FOLLOWUP_EMAIL_PROMPT}\n\nMEETING DETAILS:\n${contextString}`
+        }
+      });
 
       return emailBody;
     } catch (error: any) {

@@ -26,13 +26,18 @@ import * as net from 'net';
 import { GPUHelper } from '../utils/GPUHelper';
 
 // Upload interval in milliseconds (how often we process buffered audio)
-const PROCESS_INTERVAL_MS = 3000; // Increased from 800ms for better context
+const PROCESS_INTERVAL_MS = 2000; // 2s chunks balance latency and transcript stability
 
 // Minimum buffer size before processing (16kHz * 2 bytes * 1ch * 2s ≈ 64000)
 const MIN_BUFFER_BYTES = 64000;
 
 // Silence threshold - skip processing if audio is too quiet
 const SILENCE_RMS_THRESHOLD = 50;
+
+const NON_SPEECH_TRANSCRIPT_PATTERNS = [
+    /^\[(?:MUSIC(?: PLAYING)?|PHONE RINGING|NOISE|END PLAYBACK|APPLAUSE|LAUGHTER|INAUDIBLE|SILENCE|BLANK_AUDIO)\]$/i,
+    /^\((?:music|upbeat music|noise|mouse clicking|keyboard clicking|clicking|tapping|phone ringing|computer chimes|air whooshing)\)$/i,
+];
 
 // Default whisper.cpp threads for speed + accuracy balance
 const CPU_COUNT = os.cpus().length;
@@ -690,8 +695,7 @@ export class LocalWhisperSTT extends EventEmitter {
      * Fallback: Run whisper-cli as a one-shot process
      */
     private transcribeViaCli(wavFilePath: string): Promise<string> {
-        return new Promise(async (resolve, reject) => {
-            const gpu = await GPUHelper.detectGPU();
+        return GPUHelper.detectGPU().then((gpu) => new Promise((resolve, reject) => {
             const args = [
                 '--model', this.modelPath,
                 '--file', wavFilePath,
@@ -743,7 +747,7 @@ export class LocalWhisperSTT extends EventEmitter {
             };
 
             attemptTranscription();
-        });
+        }));
     }
 
     /**
@@ -762,6 +766,11 @@ export class LocalWhisperSTT extends EventEmitter {
             })
             .replace(/\s+/g, ' ')
             .trim();
+
+        if (this.isNonSpeechTranscript(cleaned)) {
+            return '';
+        }
+
         const words = cleaned.split(' ');
         if (words.length > 5) {
             const firstWord = words[0].toLowerCase();
@@ -769,6 +778,12 @@ export class LocalWhisperSTT extends EventEmitter {
             if (allSame) return '';
         }
         return cleaned;
+    }
+
+    private isNonSpeechTranscript(text: string): boolean {
+        if (!text) return true;
+
+        return NON_SPEECH_TRANSCRIPT_PATTERNS.some((pattern) => pattern.test(text));
     }
 
     /**

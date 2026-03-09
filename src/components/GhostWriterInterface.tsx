@@ -41,10 +41,59 @@ import 'katex/dist/katex.min.css';
 import { analytics, detectProviderType } from '../lib/analytics/analytics.service';
 import { WhisperDownloadProgress } from './WhisperDownloadProgress';
 
+// ============================================
+// UI Helpers for Intelligence Transparency
+// ============================================
+
+const ReasoningToggle: React.FC<{ reasoning?: string }> = ({ reasoning }) => {
+    const [open, setOpen] = useState(false);
+    if (!reasoning) return null;
+    return (
+        <div className="mt-2 mb-1">
+            <button
+                onClick={() => setOpen(!open)}
+                className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-400 transition-colors"
+            >
+                <div className={`w-1 h-1 rounded-full ${open ? 'bg-amber-400' : 'bg-slate-600'}`} />
+                {open ? 'Hide Reasoning' : 'View Reasoning'}
+            </button>
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="pl-2 mt-1 border-l border-white/5 text-[11px] text-slate-500 leading-relaxed italic whitespace-pre-wrap font-serif">
+                            {reasoning}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
+
+const SourceBadges: React.FC<{ sources?: string[] }> = ({ sources }) => {
+    if (!sources || sources.length === 0) return null;
+    return (
+        <div className="flex flex-wrap gap-1 mt-2">
+            {sources.map((s, i) => (
+                <div key={i} className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400/80 text-[8px] font-black uppercase tracking-tighter rounded border border-emerald-500/20">
+                    {s}
+                </div>
+            ))}
+        </div>
+    );
+};
+
 interface Message {
     id: string;
     role: 'user' | 'system' | 'interviewer';
     text: string;
+    reasoning?: string;
+    sources?: string[];
     isStreaming?: boolean;
     hasScreenshot?: boolean;
     screenshotPreview?: string;
@@ -119,11 +168,22 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
             window.electronAPI.invoke('get-current-llm-config')
                 .then((config: any) => {
                     if (config && config.model) {
-                        setCurrentModel(config.model);
+                        const normalizedModel = config.isOllama ? `ollama-${config.model}` : config.model;
+                        setCurrentModel(normalizedModel);
                     }
                 })
                 .catch((err: any) => console.error("Failed to fetch model config:", err));
         }
+
+        if (!window.electronAPI?.on) {
+            return;
+        }
+
+        return window.electronAPI.on('model-selected', (payload: { modelId?: string }) => {
+            if (payload?.modelId) {
+                setCurrentModel(payload.modelId);
+            }
+        });
     }, []);
 
     const handleModelSelect = (modelId: string) => {
@@ -262,11 +322,6 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
         if (!window.electronAPI?.onQuickAnswer) return;
         const unsubscribe = window.electronAPI.onQuickAnswer(() => {
             setIsExpanded(true);
-            setIsProcessing(true);
-            window.electronAPI.generateWhatToSay().catch((err: any) => {
-                console.error('[QuickAnswer] Error:', err);
-                setIsProcessing(false);
-            });
         });
         return () => unsubscribe();
     }, []);
@@ -421,10 +476,18 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
                 }
 
                 // Otherwise, start a new one (First token)
+                let token = data.token;
+                let reasoning = '';
+                if (token.startsWith('__THOUGHT__')) {
+                    reasoning = token.replace('__THOUGHT__', '');
+                    token = '';
+                }
+
                 return [...prev, {
                     id: Date.now().toString(),
                     role: 'system',
-                    text: data.token,
+                    text: token,
+                    reasoning: reasoning,
                     intent: 'what_to_answer',
                     isStreaming: true
                 }];
@@ -621,6 +684,13 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
             }]);
         }));
 
+        cleanups.push(window.electronAPI.onIntelligenceModeChanged((data) => {
+            if (data.mode === 'what_to_say') {
+                setIsExpanded(true);
+                setIsProcessing(true);
+            }
+        }));
+
 
 
 
@@ -755,15 +825,33 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
         cleanups.push(window.electronAPI.onGeminiStreamToken((token) => {
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
-                // Should we be updating the last message or finding the specific streaming one?
-                // Assuming the last added message is the one we are streaming into.
                 if (lastMsg && lastMsg.isStreaming && lastMsg.role === 'system') {
                     const updated = [...prev];
+
+                    let text = token;
+                    let reasoning = lastMsg.reasoning || '';
+                    let sources = lastMsg.sources || [];
+
+                    // Handle Reasoning Prefix
+                    if (token.startsWith('__THOUGHT__')) {
+                        reasoning += token.replace('__THOUGHT__', '');
+                        text = '';
+                    }
+
+                    // Handle Sources Detection
+                    if (token.includes('__SOURCES__:')) {
+                        const parts = token.split('__SOURCES__:');
+                        const sourcePart = parts[1].replace('[', '').replace(']', '').split(',').map(s => s.trim());
+                        sources = [...sources, ...sourcePart];
+                        text = parts[0];
+                    }
+
                     updated[prev.length - 1] = {
                         ...lastMsg,
-                        text: lastMsg.text + token,
-                        // re-check code status on every token? Expensive but needed for progressive highlighting
-                        isCode: (lastMsg.text + token).includes('```') || (lastMsg.text + token).includes('def ') || (lastMsg.text + token).includes('function ')
+                        text: lastMsg.text + text,
+                        reasoning: reasoning,
+                        sources: sources,
+                        isCode: (lastMsg.text + text).includes('```') || (lastMsg.text + text).includes('def ') || (lastMsg.text + text).includes('function ')
                     };
                     return updated;
                 }
@@ -1091,6 +1179,8 @@ Provide only the answer, nothing else.`;
                             );
                         })}
                     </div>
+                    <ReasoningToggle reasoning={msg.reasoning} />
+                    <SourceBadges sources={msg.sources} />
                 </div>
             );
         }
@@ -1113,6 +1203,8 @@ Provide only the answer, nothing else.`;
                             {msg.text}
                         </ReactMarkdown>
                     </div>
+                    <ReasoningToggle reasoning={msg.reasoning} />
+                    <SourceBadges sources={msg.sources} />
                 </div>
             );
         }
@@ -1134,6 +1226,8 @@ Provide only the answer, nothing else.`;
                             {msg.text}
                         </ReactMarkdown>
                     </div>
+                    <ReasoningToggle reasoning={msg.reasoning} />
+                    <SourceBadges sources={msg.sources} />
                 </div>
             );
         }
@@ -1155,6 +1249,8 @@ Provide only the answer, nothing else.`;
                             {msg.text}
                         </ReactMarkdown>
                     </div>
+                    <ReasoningToggle reasoning={msg.reasoning} />
+                    <SourceBadges sources={msg.sources} />
                 </div>
             );
         }
@@ -1242,6 +1338,8 @@ Provide only the answer, nothing else.`;
                             );
                         })}
                     </div>
+                    <ReasoningToggle reasoning={msg.reasoning} />
+                    <SourceBadges sources={msg.sources} />
                 </div>
             );
         }
@@ -1266,6 +1364,8 @@ Provide only the answer, nothing else.`;
                 >
                     {msg.text}
                 </ReactMarkdown>
+                <ReasoningToggle reasoning={msg.reasoning} />
+                <SourceBadges sources={msg.sources} />
             </div>
         );
     };
@@ -1373,6 +1473,29 @@ Provide only the answer, nothing else.`;
                                                             </button>
                                                         )}
                                                         {renderMessageText(msg)}
+
+                                                        {msg.role === 'system' && !msg.isStreaming && (
+                                                            <div className="flex flex-wrap gap-1.5 mt-3 pt-2 border-t border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button
+                                                                    onClick={() => handleFollowUp('shorten')}
+                                                                    className="px-2 py-0.5 rounded-full text-[9px] font-bold text-slate-500 hover:text-cyan-400 bg-white/5 hover:bg-cyan-400/10 border border-white/5 hover:border-cyan-400/20 transition-all uppercase tracking-tighter"
+                                                                >
+                                                                    Shorten
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleFollowUp('expand')}
+                                                                    className="px-2 py-0.5 rounded-full text-[9px] font-bold text-slate-500 hover:text-blue-400 bg-white/5 hover:bg-blue-400/10 border border-white/5 hover:border-blue-400/20 transition-all uppercase tracking-tighter"
+                                                                >
+                                                                    Deep Dive
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleFollowUp('more_formal')}
+                                                                    className="px-2 py-0.5 rounded-full text-[9px] font-bold text-slate-500 hover:text-purple-400 bg-white/5 hover:bg-purple-400/10 border border-white/5 hover:border-purple-400/20 transition-all uppercase tracking-tighter"
+                                                                >
+                                                                    Professional
+                                                                </button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))}

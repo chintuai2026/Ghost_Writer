@@ -35,7 +35,11 @@ export class AnswerLLM {
             const prompt = injectUserContext(basePrompt, resumeText, jdText, projectKnowledge, agendaText, isMeeting ? 'meeting' : 'interview');
 
             // Use LLMHelper's streamChat but collect all tokens since this method is non-streaming
-            const stream = await this.llmHelper.streamChat(question, undefined, context, prompt);
+            const stream = await this.llmHelper.streamChat({
+                message: question,
+                context: context,
+                systemPrompt: prompt
+            });
 
             let fullResponse = "";
             for await (const chunk of stream) {
