@@ -121,12 +121,13 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
     };
 
     useEffect(() => {
-        console.log("Launcher mounted");
-        // Seed demo data if needed (safe to call always)
+        // Seed demo data only if missing, then load the meeting list once.
         if (window.electronAPI && window.electronAPI.invoke) {
             window.electronAPI.invoke('seed-demo')
                 .then(() => fetchMeetings())
                 .catch(err => console.error("Failed to seed demo:", err));
+        } else {
+            fetchMeetings();
         }
 
         // Sync initial undetectable state
@@ -157,7 +158,6 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
             });
         }
 
-        fetchMeetings();
         // fetchEvents();
 
         // Listen for background updates (e.g. after meeting processing finishes)

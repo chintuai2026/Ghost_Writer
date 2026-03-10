@@ -55,7 +55,7 @@ export class ProcessingHelper {
    * Load stored credentials from CredentialsManager
    * Should be called after app.whenReady() when CredentialsManager is initialized
    */
-  public loadStoredCredentials(): void {
+  public async loadStoredCredentials(): Promise<void> {
     const credManager = CredentialsManager.getInstance();
 
     const geminiKey = credManager.getGeminiApiKey();
@@ -101,11 +101,14 @@ export class ProcessingHelper {
       console.log(`[ProcessingHelper] Found saved Ollama model: ${savedOllamaModel}`);
     }
 
+    const hasCloudKey = !!(geminiKey || groqKey || openaiKey || claudeKey || nvidiaKey || deepseekKey);
+    const shouldPreferOllama = airGapMode || process.env.USE_OLLAMA === "true" || !hasCloudKey;
+
     if (modelPreference) {
       console.log(`[ProcessingHelper] Applying saved model preference: ${modelPreference}`);
       if (modelPreference.startsWith('ollama-')) {
         const ollamaModelName = modelPreference.replace('ollama-', '');
-        this.llmHelper.switchToOllama(ollamaModelName);
+        await this.llmHelper.switchToOllama(ollamaModelName);
       } else {
         const customProviders = credManager.getCustomProviders();
         this.llmHelper.setModel(modelPreference, customProviders);
@@ -113,7 +116,10 @@ export class ProcessingHelper {
     } else if (savedOllamaModel) {
       // Support for older settings where only ollamaModel was set
       console.log(`[ProcessingHelper] Falling back to saved Ollama model: ${savedOllamaModel}`);
-      this.llmHelper.switchToOllama(savedOllamaModel);
+      await this.llmHelper.switchToOllama(savedOllamaModel);
+    } else if (shouldPreferOllama) {
+      console.log('[ProcessingHelper] No saved model preference found. Resolving best available Ollama model...');
+      await this.llmHelper.switchToOllama(undefined);
     } else {
       // Default fallback if no preference saved
       this.llmHelper.setModel(this.llmHelper.getBestAvailableModel());

@@ -22,6 +22,7 @@ export class EmbeddingPipeline {
     private vectorStore: VectorStore;
     private isProcessing = false;
     private embeddingManager: LocalEmbeddingManager;
+    private initializePromise: Promise<void> | null = null;
 
     constructor(db: Database.Database, vectorStore: VectorStore) {
         this.db = db;
@@ -33,13 +34,27 @@ export class EmbeddingPipeline {
      * Initialize the local embedding model
      */
     async initialize(): Promise<void> {
-        console.log('[EmbeddingPipeline] Initializing local embedding manager...');
-        try {
-            await this.embeddingManager.initialize();
-            console.log('[EmbeddingPipeline] Local embedding manager ready');
-        } catch (error) {
-            console.error('[EmbeddingPipeline] Failed to initialize local embedding manager:', error);
+        if (this.embeddingManager.isReady()) {
+            return;
         }
+
+        if (this.initializePromise) {
+            return this.initializePromise;
+        }
+
+        console.log('[EmbeddingPipeline] Initializing local embedding manager...');
+        this.initializePromise = (async () => {
+            try {
+                await this.embeddingManager.initialize();
+                console.log('[EmbeddingPipeline] Local embedding manager ready');
+            } catch (error) {
+                console.error('[EmbeddingPipeline] Failed to initialize local embedding manager:', error);
+            } finally {
+                this.initializePromise = null;
+            }
+        })();
+
+        return this.initializePromise;
     }
 
     /**

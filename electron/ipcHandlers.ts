@@ -30,8 +30,38 @@ export function initializeIpcHandlers(appState: AppState): void {
   }
   ipcHandlersInitialized = true;
 
+  const delegatedChannels = new Set([
+    "set-meeting-mode",
+    "get-meeting-mode",
+    "get-custom-providers",
+    "save-custom-provider",
+    "delete-custom-provider",
+    "get-stored-credentials",
+    "set-stt-provider",
+    "get-stt-provider",
+    "get-whisper-status",
+    "setup-whisper",
+    "set-local-whisper-model",
+    "set-local-whisper-paths",
+    "select-local-file",
+    "set-groq-stt-api-key",
+    "set-openai-stt-api-key",
+    "set-deepgram-api-key",
+    "set-groq-stt-model",
+    "set-elevenlabs-api-key",
+    "set-azure-api-key",
+    "set-azure-region",
+    "set-ibmwatson-api-key",
+    "test-stt-connection",
+    "native-audio-status",
+  ]);
+
   // Safe handler registration
   const safeIpcHandle = (channel: string, handler: (...args: any[]) => any) => {
+    if (delegatedChannels.has(channel)) {
+      return;
+    }
+
     try {
       ipcMain.handle(channel, handler);
     } catch (error: any) {
@@ -967,8 +997,15 @@ export function initializeIpcHandlers(appState: AppState): void {
     return DatabaseManager.getInstance().updateMeetingSummary(id, updates);
   });
 
-  safeIpcHandle("seed-demo", async () => {
-    DatabaseManager.getInstance().seedDemoMeeting();
+  safeIpcHandle("seed-demo", async (_, options?: { force?: boolean }) => {
+    const shouldForce = !!options?.force;
+    const db = DatabaseManager.getInstance();
+
+    if (!shouldForce && db.meetingExists('demo-meeting')) {
+      return { success: true, seeded: false };
+    }
+
+    db.seedDemoMeeting();
 
     // Trigger RAG processing for the new demo meeting
     const ragManager = appState.getRAGManager();
@@ -982,7 +1019,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       }
     });
 
-    return { success: true };
+    return { success: true, seeded: true };
   });
 
   safeIpcHandle("flush-database", async () => {

@@ -126,7 +126,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
 
     const handleReseedDemo = async () => {
         try {
-            await window.electronAPI?.invoke?.('seed-demo');
+            await window.electronAPI?.invoke?.('seed-demo', { force: true });
         } catch (error) {
             console.error('Failed to reseed demo meeting:', error);
         }

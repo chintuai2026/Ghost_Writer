@@ -1121,34 +1121,31 @@ export class AppState {
   public showTray(): void {
     if (this.tray) return;
 
-    // Try to find a template image first for macOS
     const resourcesPath = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
-
-    // Potential paths for tray icon
-    const templatePath = path.join(resourcesPath, 'assets', 'iconTemplate.png');
     const defaultIconPath = app.isPackaged
       ? path.join(resourcesPath, 'assets/icons/win/icon.ico')
       : path.join(__dirname, '../assets/icons/win/icon.ico');
 
     let iconToUse = defaultIconPath;
 
-    // Check if template exists (sync check is fine for startup/rare toggle)
-    try {
-      if (require('fs').existsSync(templatePath)) {
-        iconToUse = templatePath;
-        console.log('[Tray] Using template icon:', templatePath);
-      } else {
-        // Also check src/components for dev
-        const devTemplatePath = path.join(__dirname, '../src/components/iconTemplate.png');
-        if (require('fs').existsSync(devTemplatePath)) {
-          iconToUse = devTemplatePath;
-          console.log('[Tray] Using dev template icon:', devTemplatePath);
+    // macOS tray icons prefer template images; Windows should use the .ico directly.
+    if (process.platform === 'darwin') {
+      const templatePath = path.join(resourcesPath, 'assets', 'iconTemplate.png');
+
+      try {
+        if (require('fs').existsSync(templatePath)) {
+          iconToUse = templatePath;
+          console.log('[Tray] Using template icon:', templatePath);
         } else {
-          console.log('[Tray] Template icon not found, using default:', defaultIconPath);
+          const devTemplatePath = path.join(__dirname, '../src/components/iconTemplate.png');
+          if (require('fs').existsSync(devTemplatePath)) {
+            iconToUse = devTemplatePath;
+            console.log('[Tray] Using dev template icon:', devTemplatePath);
+          }
         }
+      } catch (e) {
+        console.error('[Tray] Error checking for icon:', e);
       }
-    } catch (e) {
-      console.error('[Tray] Error checking for icon:', e);
     }
 
     const trayIcon = nativeImage.createFromPath(iconToUse).resize({ width: 16, height: 16 });
@@ -1405,7 +1402,7 @@ async function initializeApp() {
   const appState = AppState.getInstance()
 
   // 2. Load stored credentials into helpers early
-  appState.processingHelper.loadStoredCredentials();
+  await appState.processingHelper.loadStoredCredentials();
 
   // 3. Initialize IPC handlers 
   initializeIpcHandlers(appState)
@@ -1471,7 +1468,6 @@ async function initializeApp() {
 
 
   app.on("activate", () => {
-    console.log("App activated")
     console.log("App activated")
     if (appState.getMainWindow() === null) {
       appState.createWindow()

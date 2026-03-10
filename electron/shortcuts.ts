@@ -1,174 +1,239 @@
-import { globalShortcut, app, BrowserWindow } from "electron"
-import { AppState } from "./main" // Adjust the import path if necessary
+import { app, BrowserWindow, globalShortcut } from "electron";
+import { AppState } from "./main";
+
+type ShortcutDefinition = {
+  accelerator: string;
+  label: string;
+  handler: () => void | Promise<void>;
+};
 
 export class ShortcutsHelper {
-  private appState: AppState
-  private activeScreenshotShortcut: string = "CommandOrControl+H"
+  private appState: AppState;
+  private activeScreenshotShortcut = "CommandOrControl+H";
+  private hasRegisteredShortcuts = false;
+  private retryTimer: NodeJS.Timeout | null = null;
 
   constructor(appState: AppState) {
-    this.appState = appState
+    this.appState = appState;
+
+    app.on("will-quit", () => {
+      if (this.retryTimer) {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+      }
+      globalShortcut.unregisterAll();
+      this.hasRegisteredShortcuts = false;
+    });
   }
 
   public getActiveScreenshotShortcut(): string {
-    return this.activeScreenshotShortcut
+    return this.activeScreenshotShortcut;
   }
 
   public registerGlobalShortcuts(): void {
-    const registerShortcut = (
-      accelerator: string,
-      handler: () => void | Promise<void>,
-      label: string
-    ): boolean => {
-      globalShortcut.register(accelerator, handler)
-      const registered = globalShortcut.isRegistered(accelerator)
-
-      if (!registered) {
-        console.warn(`[Shortcuts] Failed to register ${label} (${accelerator})`)
-      }
-
-      return registered
+    if (this.hasRegisteredShortcuts) {
+      return;
     }
 
-    // Add global shortcut to show/center window
-    registerShortcut("CommandOrControl+Shift+Space", () => {
-      // console.log("Show/Center window shortcut pressed...")
-      this.appState.centerAndShowWindow()
-    }, "show window")
+    if (!app.isReady()) {
+      app.whenReady().then(() => this.registerGlobalShortcuts());
+      return;
+    }
 
-    // Screenshot shortcut — try Ctrl+H first, fall back to Ctrl+Shift+H if it's taken
-    const screenshotHandler = async () => {
-      console.log("[Shortcuts] Screenshot shortcut pressed — taking screenshot...")
+    this.hasRegisteredShortcuts = true;
+    this.performRegistration(false);
+  }
+
+  private performRegistration(logFailures: boolean): void {
+    globalShortcut.unregisterAll();
+    const failedLabels: string[] = [];
+
+    const registerShortcut = ({
+      accelerator,
+      handler,
+      label,
+    }: ShortcutDefinition): boolean => {
       try {
-        const screenshotPath = await this.appState.takeScreenshot()
-        console.log("[Shortcuts] Screenshot saved:", screenshotPath)
-        const preview = await this.appState.getImagePreview(screenshotPath)
+        globalShortcut.register(accelerator, handler);
+      } catch (error) {
+        if (logFailures) {
+          console.warn(`[Shortcuts] Error registering ${label} (${accelerator})`, error);
+        }
+      }
 
-        // Small delay so the re-shown window is fully ready to receive events
-        await new Promise(resolve => setTimeout(resolve, 150))
+      const registered = globalShortcut.isRegistered(accelerator);
+      if (!registered && logFailures) {
+        console.warn(`[Shortcuts] Failed to register ${label} (${accelerator})`);
+      }
+      if (!registered) {
+        failedLabels.push(label);
+      }
 
-        // Broadcast to ALL windows – ensures delivery regardless of overlay vs launcher mode
-        const windowHelper = this.appState.getWindowHelper()
-        const wins = [
+      return registered;
+    };
+
+    this.registerPrimaryShortcuts(registerShortcut, logFailures);
+
+    if (failedLabels.length > 0 && !logFailures) {
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        this.performRegistration(true);
+      }, 1500);
+    }
+  }
+
+  private registerPrimaryShortcuts(
+    registerShortcut: (definition: ShortcutDefinition) => boolean,
+    logFailures: boolean
+  ): void {
+    registerShortcut({
+      accelerator: "CommandOrControl+Shift+Space",
+      handler: () => this.appState.centerAndShowWindow(),
+      label: "show window",
+    });
+
+    this.registerScreenshotShortcuts(registerShortcut, logFailures);
+
+    registerShortcut({
+      accelerator: "CommandOrControl+Enter",
+      handler: async () => {
+        await this.appState.processingHelper.processScreenshots();
+      },
+      label: "process screenshots",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+R",
+      handler: () => this.handleResetSession(),
+      label: "reset session",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+Left",
+      handler: () => this.appState.moveWindowLeft(),
+      label: "move window left",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+Right",
+      handler: () => this.appState.moveWindowRight(),
+      label: "move window right",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+Down",
+      handler: () => this.appState.moveWindowDown(),
+      label: "move window down",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+Up",
+      handler: () => this.appState.moveWindowUp(),
+      label: "move window up",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+B",
+      handler: () => this.handleToggleVisibility(),
+      label: "toggle visibility",
+    });
+
+    registerShortcut({
+      accelerator: "Alt+G",
+      handler: () => this.handleToggleVisibility(),
+      label: "toggle visibility alias",
+    });
+
+    registerShortcut({
+      accelerator: "F8",
+      handler: async () => {
+        await this.handleQuickAnswer();
+      },
+      label: "quick answer",
+    });
+
+    registerShortcut({
+      accelerator: "CommandOrControl+J",
+      handler: async () => {
+        await this.handleQuickAnswer();
+      },
+      label: "quick answer alias",
+    });
+
+    registerShortcut({
+      accelerator: "F9",
+      handler: async () => {
+        if (this.appState.getIsMeetingActive()) {
+          await this.appState.endMeeting();
+        } else {
+          await this.appState.startMeeting();
+        }
+      },
+      label: "toggle meeting",
+    });
+
+    registerShortcut({
+      accelerator: "Alt+C",
+      handler: () => this.handleResetSession(),
+      label: "reset session alias",
+    });
+  }
+
+  private registerScreenshotShortcuts(
+    registerShortcut: (definition: ShortcutDefinition) => boolean,
+    logFailures: boolean
+  ): void {
+    const screenshotHandler = async () => {
+      console.log("[Shortcuts] Screenshot shortcut pressed - taking screenshot...");
+      try {
+        const screenshotPath = await this.appState.takeScreenshot();
+        console.log("[Shortcuts] Screenshot saved:", screenshotPath);
+        const preview = await this.appState.getImagePreview(screenshotPath);
+
+        await new Promise((resolve) => setTimeout(resolve, 150));
+
+        const windowHelper = this.appState.getWindowHelper();
+        const windows = [
           windowHelper.getLauncherWindow(),
-          windowHelper.getOverlayWindow()
-        ]
-        let sent = 0
-        for (const win of wins) {
-          if (win && !win.isDestroyed()) {
-            win.webContents.send("screenshot-taken", { path: screenshotPath, preview })
-            sent++
+          windowHelper.getOverlayWindow(),
+        ];
+
+        let sent = 0;
+        for (const window of windows) {
+          if (window && !window.isDestroyed()) {
+            window.webContents.send("screenshot-taken", { path: screenshotPath, preview });
+            sent++;
           }
         }
-        console.log(`[Shortcuts] screenshot-taken event sent to ${sent} window(s)`)
+
+        console.log(`[Shortcuts] screenshot-taken event sent to ${sent} window(s)`);
       } catch (error) {
-        console.error("[Shortcuts] Error capturing screenshot:", error)
+        console.error("[Shortcuts] Error capturing screenshot:", error);
+      }
+    };
+
+    const family = [
+      "CommandOrControl+H",
+      "CommandOrControl+Shift+H",
+      "CommandOrControl+Alt+H",
+    ];
+
+    for (const accelerator of family) {
+      if (registerShortcut({ accelerator, handler: screenshotHandler, label: "screenshot" })) {
+        this.activeScreenshotShortcut = accelerator;
+        if (accelerator === "CommandOrControl+H") {
+          console.log("[Shortcuts] Ctrl+H registered as screenshot shortcut");
+        } else if (logFailures) {
+          console.warn(`[Shortcuts] Ctrl+H unavailable - registered ${accelerator} instead`);
+        }
+        return;
       }
     }
 
-    const tryRegister = (accelerator: string): boolean => {
-      return registerShortcut(accelerator, screenshotHandler, "screenshot")
+    this.activeScreenshotShortcut = "Unbound";
+    if (logFailures) {
+      console.error("[Shortcuts] Failed to register any screenshot shortcut (Ctrl+H family).");
     }
-
-    if (tryRegister("CommandOrControl+H")) {
-      this.activeScreenshotShortcut = "CommandOrControl+H"
-      console.log("[Shortcuts] ✅ Ctrl+H registered as screenshot shortcut")
-    } else if (tryRegister("CommandOrControl+Shift+H")) {
-      this.activeScreenshotShortcut = "CommandOrControl+Shift+H"
-      console.warn("[Shortcuts] ⚠️ Ctrl+H unavailable — registered Ctrl+Shift+H instead")
-    } else if (tryRegister("CommandOrControl+Alt+H")) {
-      this.activeScreenshotShortcut = "CommandOrControl+Alt+H"
-      console.warn("[Shortcuts] ⚠️ Ctrl+H and Ctrl+Shift+H unavailable — registered Ctrl+Alt+H instead")
-    } else {
-      this.activeScreenshotShortcut = "Unbound"
-      console.error("[Shortcuts] ❌ Failed to register any screenshot shortcut (Ctrl+H family). They are all taken by your OS.")
-    }
-
-
-
-
-    registerShortcut("CommandOrControl+Enter", async () => {
-      await this.appState.processingHelper.processScreenshots()
-    }, "process screenshots")
-
-    registerShortcut("CommandOrControl+R", () => {
-      // console.log(
-      //   "Command + R pressed. Canceling requests and resetting queues..."
-      // )
-
-      // Cancel ongoing API requests
-      this.appState.processingHelper.cancelOngoingRequests()
-
-      // Clear both screenshot queues
-      this.appState.clearQueues()
-
-      // console.log("Cleared queues.")
-
-      // Update the view state to 'queue'
-      this.appState.setView("queue")
-
-      // Notify renderer process to switch view to 'queue'
-      const mainWindow = this.appState.getMainWindow()
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("reset-view")
-      }
-    }, "reset session")
-
-    // New shortcuts for moving the window
-    registerShortcut("CommandOrControl+Left", () => {
-      // console.log("Command/Ctrl + Left pressed. Moving window left.")
-      this.appState.moveWindowLeft()
-    }, "move window left")
-
-    registerShortcut("CommandOrControl+Right", () => {
-      // console.log("Command/Ctrl + Right pressed. Moving window right.")
-      this.appState.moveWindowRight()
-    }, "move window right")
-    registerShortcut("CommandOrControl+Down", () => {
-      // console.log("Command/Ctrl + down pressed. Moving window down.")
-      this.appState.moveWindowDown()
-    }, "move window down")
-    registerShortcut("CommandOrControl+Up", () => {
-      // console.log("Command/Ctrl + Up pressed. Moving window Up.")
-      this.appState.moveWindowUp()
-    }, "move window up")
-
-    registerShortcut("CommandOrControl+B", () => {
-      this.handleToggleVisibility();
-    }, "toggle visibility");
-
-    // Alt+G: Alias for Toggle Visibility
-    registerShortcut("Alt+G", () => {
-      this.handleToggleVisibility();
-    }, "toggle visibility alias");
-
-    // F8: "What to answer" / Ask AI
-    registerShortcut("F8", async () => {
-      await this.handleQuickAnswer();
-    }, "quick answer");
-
-    // Ctrl+J: Legacy alias for Quick Answer
-    registerShortcut("CommandOrControl+J", async () => {
-      await this.handleQuickAnswer();
-    }, "quick answer alias");
-
-    // F9: Start/Stop transcription (Toggle Meeting)
-    registerShortcut("F9", async () => {
-      if (this.appState.getIsMeetingActive()) {
-        await this.appState.endMeeting();
-      } else {
-        await this.appState.startMeeting();
-      }
-    }, "toggle meeting");
-
-    // Alt+C: Reset/Cancel (Alias for Cmd+R)
-    registerShortcut("Alt+C", () => {
-      this.handleResetSession();
-    }, "reset session alias");
-
-    // Unregister shortcuts when quitting
-    app.on("will-quit", () => {
-      globalShortcut.unregisterAll()
-    })
   }
 
   private async handleQuickAnswer(): Promise<void> {
@@ -176,58 +241,59 @@ export class ShortcutsHelper {
     const candidateWindows = [
       windowHelper.getMainWindow(),
       windowHelper.getLauncherWindow(),
-      windowHelper.getOverlayWindow()
+      windowHelper.getOverlayWindow(),
     ].filter((window, index, windows): window is BrowserWindow => {
       return !!window && !window.isDestroyed() && windows.indexOf(window) === index;
     });
 
     for (const window of candidateWindows) {
-      window.webContents.send('quick-answer');
+      window.webContents.send("quick-answer");
     }
 
     try {
       await this.appState.getIntelligenceManager().runWhatShouldISay();
-    } catch (err) {
-      console.error('[Shortcuts] Quick answer failed:', err);
+    } catch (error) {
+      console.error("[Shortcuts] Quick answer failed:", error);
     }
   }
 
   private handleToggleVisibility(): void {
-    const windowHelper = this.appState.getWindowHelper()
-    const overlayWindow = windowHelper.getOverlayWindow()
-    const launcherWindow = windowHelper.getLauncherWindow()
-    const currentMode = windowHelper.getCurrentWindowMode()
-    const focusedWindow = BrowserWindow.getFocusedWindow()
+    const windowHelper = this.appState.getWindowHelper();
+    const overlayWindow = windowHelper.getOverlayWindow();
+    const launcherWindow = windowHelper.getLauncherWindow();
+    const currentMode = windowHelper.getCurrentWindowMode();
+    const focusedWindow = BrowserWindow.getFocusedWindow();
 
     if (focusedWindow && launcherWindow && focusedWindow.id === launcherWindow.id) {
-      launcherWindow.hide()
-      return
+      launcherWindow.hide();
+      return;
     }
 
     if (focusedWindow && overlayWindow && focusedWindow.id === overlayWindow.id) {
-      overlayWindow.webContents.send('toggle-expand')
-      return
+      overlayWindow.webContents.send("toggle-expand");
+      return;
     }
 
-    if (currentMode === 'overlay' && overlayWindow) {
-      overlayWindow.webContents.send('toggle-expand')
+    if (currentMode === "overlay" && overlayWindow) {
+      overlayWindow.webContents.send("toggle-expand");
     } else if (launcherWindow) {
       if (launcherWindow.isVisible()) {
-        launcherWindow.hide()
+        launcherWindow.hide();
       } else {
-        launcherWindow.show()
-        launcherWindow.focus()
+        launcherWindow.show();
+        launcherWindow.focus();
       }
     }
   }
 
   private handleResetSession(): void {
-    this.appState.processingHelper.cancelOngoingRequests()
-    this.appState.clearQueues()
-    this.appState.setView("queue")
-    const mainWindow = this.appState.getMainWindow()
+    this.appState.processingHelper.cancelOngoingRequests();
+    this.appState.clearQueues();
+    this.appState.setView("queue");
+
+    const mainWindow = this.appState.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("reset-view")
+      mainWindow.webContents.send("reset-view");
     }
   }
 }

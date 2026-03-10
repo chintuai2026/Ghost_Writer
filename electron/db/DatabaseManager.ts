@@ -469,6 +469,12 @@ export class DatabaseManager {
         };
     }
 
+    public meetingExists(id: string): boolean {
+        if (!this.db) return false;
+        const row = this.db.prepare('SELECT 1 FROM meetings WHERE id = ? LIMIT 1').get(id);
+        return !!row;
+    }
+
     public deleteMeeting(id: string): boolean {
         if (!this.db) return false;
 

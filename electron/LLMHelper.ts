@@ -198,7 +198,7 @@ export class LLMHelper extends EventEmitter {
   }
 
   public setModel(modelId: string, customProviders: CustomProvider[] = []): void {
-    const isLocalOllama = modelId.startsWith("ollama:");
+    const isLocalOllama = modelId.startsWith("ollama:") || modelId.startsWith("ollama-");
 
     // Strict Air-Gap Enforcement
     if (this.airGapMode && !isLocalOllama) {
