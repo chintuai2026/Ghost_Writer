@@ -5,7 +5,7 @@ import { LLMHelper } from "./LLMHelper"
 import { CredentialsManager } from "./services/CredentialsManager"
 import dotenv from "dotenv"
 
-dotenv.config()
+dotenv.config({ quiet: true })
 
 const isDev = process.env.NODE_ENV === "development"
 const isDevTest = process.env.IS_DEV_TEST === "true"

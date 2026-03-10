@@ -789,6 +789,12 @@ export class LLMHelper extends EventEmitter {
     if (model) {
       this.ollamaModel = model;
     } else {
+      if (this.initPromise) {
+        await this.initPromise;
+        if (this.ollamaModel) {
+          return;
+        }
+      }
       await this.initializeOllamaModel();
     }
   }

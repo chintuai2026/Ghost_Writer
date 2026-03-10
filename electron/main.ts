@@ -61,7 +61,7 @@ if (!gotSingleInstanceLock) {
 }
 
 import { autoUpdater } from "electron-updater"
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 // Handle stdout/stderr errors at the process level to prevent EIO crashes
 // This is critical for Electron apps that may have their terminal detached
