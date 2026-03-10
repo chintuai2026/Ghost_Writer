@@ -404,7 +404,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
     // STT Provider settings
     const [sttProvider, setSttProvider] = useState<'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper'>('google');
     const [groqSttModel, setGroqSttModel] = useState('whisper-large-v3-turbo');
-    const [whisperStatus, setWhisperStatus] = useState<{ hasBinary: boolean; hasModel: boolean; hasCUDASupport?: boolean; isMacOS?: boolean; platform?: string; isDownloading: boolean; selectedModel: string; progress?: number; installedModels?: Record<string, boolean>; downloadingModel?: string | null; customBinaryPath?: string; customModelPath?: string } | null>(null);
+    const [whisperStatus, setWhisperStatus] = useState<{ hasBinary: boolean; hasModel: boolean; hasOperationalServer?: boolean; hasCUDASupport?: boolean; isMacOS?: boolean; platform?: string; isDownloading: boolean; selectedModel: string; progress?: number; installedModels?: Record<string, boolean>; downloadingModel?: string | null; customBinaryPath?: string; customModelPath?: string } | null>(null);
     const [pendingWhisperModel, setPendingWhisperModel] = useState<string | null>(null);
     const [whisperApplied, setWhisperApplied] = useState(false);
 
@@ -1321,7 +1321,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                             {/* Dependency Checklist */}
                                                             <div className="grid grid-cols-3 gap-2 mt-2">
                                                                 <div className="flex items-center gap-1.5">
-                                                                    {whisperStatus?.hasBinary
+                                                                    {(whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary)
                                                                         ? <Check size={10} className="text-emerald-400" strokeWidth={3} />
                                                                         : <X size={10} className="text-red-400" strokeWidth={3} />}
                                                                     <span className="text-[10px] text-text-secondary">Engine</span>
@@ -1348,13 +1348,13 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                             <div>
                                                                 <label className="text-xs font-medium text-text-secondary block mb-1">Local Whisper Status</label>
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className={`w-2 h-2 rounded-full ${whisperStatus?.hasBinary && whisperStatus?.hasModel ? 'bg-green-500' : 'bg-amber-500'}`} />
+                                                                    <div className={`w-2 h-2 rounded-full ${(whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary) && whisperStatus?.hasModel ? 'bg-green-500' : 'bg-amber-500'}`} />
                                                                     <span className="text-sm font-medium text-text-primary">
                                                                         {whisperStatus?.isDownloading
                                                                             ? (whisperStatus.downloadingModel === 'binary' || whisperStatus.downloadingModel === 'binary-cuda'
                                                                                 ? (whisperStatus?.isMacOS ? 'Building Metal Engine...' : `Downloading ${gpuInfo?.isNvidia ? 'CUDA' : 'CPU'} Engine...`)
                                                                                 : `Downloading ${whisperStatus.downloadingModel || 'model'}...`)
-                                                                            : whisperStatus?.hasBinary && whisperStatus?.hasModel
+                                                                            : (whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary) && whisperStatus?.hasModel
                                                                                 ? (whisperStatus?.hasCUDASupport ? (whisperStatus?.isMacOS ? '\u2705 Ready (Metal Accelerated)' : '\u2705 Ready (GPU Accelerated)') : '\u2705 Ready')
                                                                                 : 'Setup required'}
                                                                     </span>
@@ -1373,7 +1373,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                         </div>
 
                                                         {/* One-Click Setup Banner */}
-                                                        {!whisperStatus?.isDownloading && (!whisperStatus?.hasBinary || !whisperStatus?.hasModel || ((gpuInfo?.isNvidia || whisperStatus?.isMacOS) && !whisperStatus?.hasCUDASupport)) && (
+                                                        {!whisperStatus?.isDownloading && (!(whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary) || !whisperStatus?.hasModel || ((gpuInfo?.isNvidia || whisperStatus?.isMacOS) && !whisperStatus?.hasCUDASupport)) && (
                                                             <div className={`rounded-lg p-3 mb-4 border ${'bg-accent-primary/5 border-accent-primary/20'}`}>
                                                                 <div className="flex items-start gap-3">
                                                                     <div className="p-2 rounded-lg bg-accent-primary/10 text-accent-primary">
@@ -1383,14 +1383,14 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                                         <h4 className="text-sm font-medium text-text-primary mb-1">
                                                                             {whisperStatus?.isMacOS
                                                                                 ? 'Setup for macOS'
-                                                                                : gpuInfo?.isNvidia && whisperStatus?.hasBinary && !whisperStatus?.hasCUDASupport
+                                                                                : gpuInfo?.isNvidia && (whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary) && !whisperStatus?.hasCUDASupport
                                                                                     ? 'GPU Acceleration Available'
                                                                                     : 'Setup Required'}
                                                                         </h4>
                                                                         <p className="text-xs text-text-secondary mb-3">
                                                                             {whisperStatus?.isMacOS
                                                                                 ? `Will download and compile whisper.cpp with Metal GPU acceleration for Apple Silicon. This takes 1-2 minutes (requires Xcode Command Line Tools).`
-                                                                                : gpuInfo?.isNvidia && whisperStatus?.hasBinary && !whisperStatus?.hasCUDASupport
+                                                                                : gpuInfo?.isNvidia && (whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary) && !whisperStatus?.hasCUDASupport
                                                                                     ? `Your ${gpuInfo.name} (${gpuInfo.vramGB}GB) is ready! Download CUDA-enabled engine (~460MB) for 10x faster transcription.`
                                                                                     : gpuInfo?.isNvidia
                                                                                         ? `Will download CUDA-enabled engine (~460MB) + ${whisperStatus?.selectedModel || 'small'} model for your ${gpuInfo.name}.`
@@ -1404,7 +1404,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                                             <Download size={14} />
                                                                             {whisperStatus?.isMacOS
                                                                                 ? 'Build & Setup Everything'
-                                                                                : gpuInfo?.isNvidia && whisperStatus?.hasBinary && !whisperStatus?.hasCUDASupport
+                                                                                : gpuInfo?.isNvidia && (whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary) && !whisperStatus?.hasCUDASupport
                                                                                     ? 'Download CUDA Engine'
                                                                                     : 'Download & Setup Everything'}
                                                                         </button>

@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import { spawnSync } from 'child_process';
 import { app } from 'electron';
 import { IncomingMessage } from 'http';
 
@@ -24,6 +25,7 @@ import { IncomingMessage } from 'http';
 let WHISPER_CPP_VERSION = 'v1.8.3'; // Fallback
 let cachedBinaryUrls: { cpu: string; cuda: string; source?: string } | null = null;
 const CUDA_RUNTIME_DLLS = ['cublas64_12.dll', 'cublasLt64_12.dll', 'cudart64_12.dll'];
+const WHISPER_SERVER_VALIDATION_TIMEOUT_MS = 15000;
 
 /**
  * Get download URLs for whisper binaries.
@@ -354,49 +356,127 @@ export class WhisperModelManager {
     }
 
     /**
+     * Resolve the whisper-server binary path that matches the selected CLI binary path.
+     */
+    public getServerBinaryPath(): string {
+        const cliPath = this.getBinaryPath();
+        const binDir = path.dirname(cliPath);
+        const serverName = process.platform === 'win32' ? 'whisper-server.exe' : 'whisper-server';
+        return path.join(binDir, serverName);
+    }
+
+    /**
+     * Verify that the installed whisper bundle can actually launch whisper-server.
+     * This catches incomplete/stale bundles that otherwise fall back to slow CLI mode.
+     */
+    public validateBinaryBundle(logFailures: boolean = true): { ok: boolean; error?: string } {
+        const cliPath = this.getBinaryPath();
+        const serverPath = this.getServerBinaryPath();
+
+        if (!fs.existsSync(cliPath)) {
+            return { ok: false, error: `Whisper CLI not found: ${cliPath}` };
+        }
+
+        if (!fs.existsSync(serverPath)) {
+            return { ok: false, error: `Whisper server not found: ${serverPath}` };
+        }
+
+        const binDir = path.dirname(serverPath);
+        const env = { ...process.env };
+        if (process.platform === 'win32') {
+            env.PATH = `${binDir}${path.delimiter}${env.PATH || ''}`;
+            env.CUDA_VISIBLE_DEVICES = env.CUDA_VISIBLE_DEVICES || '0';
+        }
+
+        const result = spawnSync(serverPath, ['--help'], {
+            cwd: binDir,
+            env,
+            windowsHide: true,
+            timeout: WHISPER_SERVER_VALIDATION_TIMEOUT_MS,
+            encoding: 'utf8',
+        });
+
+        if (result.error) {
+            const error = `Whisper server validation failed: ${result.error.message}`;
+            if (logFailures) {
+                console.warn(`[WhisperModelManager] ${error}`);
+            }
+            return { ok: false, error };
+        }
+
+        if (result.status === 0) {
+            return { ok: true };
+        }
+
+        const output = `${result.stdout || ''}\n${result.stderr || ''}`
+            .trim()
+            .split(/\r?\n/)
+            .slice(0, 3)
+            .join(' | ');
+        const exitCode = result.status ?? result.signal ?? 'unknown';
+        const error = `Whisper server exited with code ${exitCode}${output ? `: ${output}` : ''}`;
+        if (logFailures) {
+            console.warn(`[WhisperModelManager] ${error}`);
+        }
+        return { ok: false, error };
+    }
+
+    /**
      * Download the whisper.cpp binary if not present.
      * Automatically selects the correct build (CUDA or CPU) based on GPU detection.
      * Returns true if download was successful or binary already exists.
      */
     public async ensureBinary(): Promise<boolean> {
-        // If already extracted or we have any acceptable binary, return true
-        if (this.hasBinary()) {
-            console.log('[WhisperModelManager] Binary already exists');
-            // Check if we should upgrade to CUDA build
-            try {
-                const { GPUHelper } = require('../utils/GPUHelper');
-                const gpu = await GPUHelper.detectGPU();
-                if (gpu.isNvidia && !this.hasCUDASupport()) {
-                    console.log('[WhisperModelManager] NVIDIA GPU detected but no CUDA binary. Downloading GPU-enabled build...');
-                    return this.downloadBinary(true);
-                }
-            } catch (e) {
-                console.warn('[WhisperModelManager] GPU check failed, keeping existing binary:', e);
-            }
-            return true;
-        }
-
         if (this.isDownloading) {
             console.log('[WhisperModelManager] Download already in progress');
             return false;
         }
 
-        // Auto-detect GPU for initial download
         let useGPU = false;
         try {
             const { GPUHelper } = require('../utils/GPUHelper');
             const gpu = await GPUHelper.detectGPU();
             useGPU = gpu.isNvidia;
-            if (useGPU) {
-                console.log(`[WhisperModelManager] NVIDIA GPU detected (${gpu.name}). Will download CUDA-enabled build.`);
-            } else {
-                console.log(`[WhisperModelManager] No NVIDIA GPU. Will download CPU-only build.`);
-            }
         } catch (e) {
-            console.warn('[WhisperModelManager] GPU detection failed, downloading CPU build:', e);
+            console.warn('[WhisperModelManager] GPU detection failed, defaulting to CPU build:', e);
         }
 
-        return this.downloadBinary(useGPU);
+        const { CredentialsManager } = require('../services/CredentialsManager');
+        const customBinaryPath = CredentialsManager.getInstance().getLocalWhisperBinaryPath();
+        const hasCustomBinaryOverride = !!(customBinaryPath && fs.existsSync(customBinaryPath));
+
+        if (this.hasBinary()) {
+            const validation = this.validateBinaryBundle(false);
+            if (validation.ok) {
+                console.log('[WhisperModelManager] Existing whisper bundle validated successfully');
+                if (useGPU && !this.hasCUDASupport()) {
+                    console.log('[WhisperModelManager] NVIDIA GPU detected but current bundle is CPU-only. Attempting GPU upgrade...');
+                    const upgraded = await this.downloadBinary(true);
+                    if (!upgraded) {
+                        console.warn('[WhisperModelManager] GPU upgrade failed. Continuing with existing validated CPU bundle.');
+                    }
+                }
+                return true;
+            }
+
+            console.warn(`[WhisperModelManager] Existing whisper bundle is invalid: ${validation.error}`);
+            if (hasCustomBinaryOverride) {
+                console.warn('[WhisperModelManager] Custom whisper binary override is configured. Skipping automatic repair.');
+                return false;
+            }
+        }
+
+        if (useGPU) {
+            console.log('[WhisperModelManager] Downloading validated CUDA-enabled whisper bundle...');
+            const gpuOk = await this.downloadBinary(true);
+            if (gpuOk) {
+                return true;
+            }
+            console.warn('[WhisperModelManager] GPU bundle failed validation. Falling back to CPU bundle...');
+        }
+
+        console.log('[WhisperModelManager] Downloading validated CPU-only whisper bundle...');
+        return this.downloadBinary(false);
     }
 
     /**
@@ -421,14 +501,9 @@ export class WhisperModelManager {
         this.isDownloading = true;
 
         try {
-            // Clear existing binaries before downloading new ones
-            if (fs.existsSync(this.binDir)) {
-                const existingFiles = fs.readdirSync(this.binDir);
-                for (const file of existingFiles) {
-                    const filePath = path.join(this.binDir, file);
-                    try { fs.unlinkSync(filePath); } catch { }
-                }
-            }
+            // Clear existing binaries completely before extracting a new bundle.
+            fs.rmSync(this.binDir, { recursive: true, force: true });
+            fs.mkdirSync(this.binDir, { recursive: true });
 
             // Download the zip file
             const zipPath = path.join(this.whisperDir, 'whisper-bin.zip');
@@ -444,6 +519,14 @@ export class WhisperModelManager {
             // Make binary executable on Unix
             if (process.platform !== 'win32') {
                 fs.chmodSync(this.getBinaryPath(), 0o755);
+            }
+
+            const validation = this.validateBinaryBundle();
+            if (!validation.ok) {
+                console.error(`[WhisperModelManager] ${buildType} bundle validation failed: ${validation.error}`);
+                fs.rmSync(this.binDir, { recursive: true, force: true });
+                fs.mkdirSync(this.binDir, { recursive: true });
+                return false;
             }
 
             console.log(`[WhisperModelManager] ${buildType} binary ready: ${this.getBinaryPath()}`);
@@ -481,13 +564,7 @@ export class WhisperModelManager {
             fs.mkdirSync(buildDir, { recursive: true });
 
             // Clear existing binaries
-            if (fs.existsSync(this.binDir)) {
-                const existingFiles = fs.readdirSync(this.binDir);
-                for (const file of existingFiles) {
-                    const filePath = path.join(this.binDir, file);
-                    try { fs.unlinkSync(filePath); } catch { }
-                }
-            }
+            fs.rmSync(this.binDir, { recursive: true, force: true });
             fs.mkdirSync(this.binDir, { recursive: true });
 
             // Download source tarball
@@ -645,16 +722,8 @@ export class WhisperModelManager {
      * Ensure both binary and model are available
      */
     public async ensureReady(): Promise<boolean> {
-        // If we have valid paths (custom or default), we are ready
-        if (this.isReady()) {
-            return true;
-        }
-
-        // If not ready, see if we need to download default binary
-        if (!this.hasBinary()) {
-            const binaryOk = await this.ensureBinary();
-            if (!binaryOk) return false;
-        }
+        const binaryOk = await this.ensureBinary();
+        if (!binaryOk) return false;
 
         // Same for model
         if (!this.hasModel()) {

@@ -30,7 +30,8 @@ export class STTFactory {
         // 1. Explicitly requested Local Whisper (or Air Gap Mode)
         if (sttProvider === 'local-whisper') {
             const modelManager = WhisperModelManager.getInstance();
-            if (modelManager.isReady()) {
+            const ready = await modelManager.ensureReady();
+            if (ready) {
                 const paths = modelManager.getPaths();
                 const whisper = new LocalWhisperSTT(paths.binaryPath, paths.modelPath);
                 const health = await whisper.checkHealth();
@@ -39,7 +40,7 @@ export class STTFactory {
                 }
                 console.warn(`[STTFactory] Local Whisper health check failed: ${health.error}. Falling back to Google...`);
             } else {
-                console.warn(`[STTFactory] Local Whisper not ready (binary/model missing). Falling back to Google...`);
+                console.warn(`[STTFactory] Local Whisper is not operational after setup/repair. Falling back to Google...`);
             }
             return new GoogleSTT() as ISTT;
         }
@@ -92,7 +93,8 @@ export class STTFactory {
      */
     private static async createLocalWhisperWithFallback(): Promise<ISTT> {
         const modelManager = WhisperModelManager.getInstance();
-        if (modelManager.isReady()) {
+        const ready = await modelManager.ensureReady();
+        if (ready) {
             const paths = modelManager.getPaths();
             const whisper = new LocalWhisperSTT(paths.binaryPath, paths.modelPath);
             const health = await whisper.checkHealth();
