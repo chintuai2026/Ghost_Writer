@@ -42,4 +42,8 @@ export function setupSystemHandlers() {
             };
         }
     });
+
+    ipcMain.handle('native-audio-status', async () => {
+        return { connected: true };
+    });
 }

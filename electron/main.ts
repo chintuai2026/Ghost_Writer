@@ -1489,17 +1489,19 @@ async function initializeApp() {
   app.commandLine.appendSwitch("disable-background-timer-throttling")
 }
 
-app.on('second-instance', () => {
-  try {
-    const appState = AppState.getInstance();
-    appState.centerAndShowWindow();
-  } catch {
-    // Ignore until the first instance is fully initialized.
-  }
-});
+if (gotSingleInstanceLock) {
+  app.on('second-instance', () => {
+    try {
+      const appState = AppState.getInstance();
+      appState.centerAndShowWindow();
+    } catch {
+      // Ignore until the first instance is fully initialized.
+    }
+  });
 
-// Start the application
-initializeApp().catch(console.error)
+  // Start the application
+  initializeApp().catch(console.error);
+}
 
 // Ensure meeting is ended and saved when app is quitting
 app.on('will-quit', async (event) => {

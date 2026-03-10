@@ -537,28 +537,6 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
-  safeIpcHandle("switch-to-custom-provider", async (_, providerId: string) => {
-    try {
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      const provider = CredentialsManager.getInstance().getCustomProviders().find((p: any) => p.id === providerId);
-
-      if (!provider) {
-        throw new Error("Provider not found");
-      }
-
-      const llmHelper = appState.processingHelper.getLLMHelper();
-      await llmHelper.switchToCustom(provider);
-
-      // Re-init IntelligenceManager (optional, but good for consistency)
-      appState.getIntelligenceManager().initializeLLMs();
-
-      return { success: true };
-    } catch (error: any) {
-      console.error("Error switching to custom provider:", error);
-      return { success: false, error: error.message };
-    }
-  });
-
   // Get stored API keys (masked for UI display)
   safeIpcHandle("get-stored-credentials", async () => {
     try {
@@ -936,12 +914,6 @@ export function initializeIpcHandlers(appState: AppState): void {
   // - electron/ipc/credentialHandlers.ts
   // - electron/ipc/sttHandlers.ts
   // - electron/ipc/intelligenceHandlers.ts
-
-  // Native Audio Service Handlers
-  // Native Audio handlers removed as part of migration to driverless architecture
-  safeIpcHandle("native-audio-status", async () => {
-    return { connected: true };
-  });
 
   // ==========================================
   // Meeting Lifecycle Handlers

@@ -16,18 +16,17 @@ export class ProcessingHelper {
   private llmHelper: LLMHelper
   private currentProcessingAbortController: AbortController | null = null
   private currentExtraProcessingAbortController: AbortController | null = null
+  private defaultOllamaUrl: string
 
   constructor(appState: AppState) {
     this.appState = appState
 
     // Check if user wants to use Ollama
     const useOllama = process.env.USE_OLLAMA === "true"
-    const ollamaModel = process.env.OLLAMA_MODEL || undefined // Ensure we don't pick up a stale default if empty string
-    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
+    this.defaultOllamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
 
     if (useOllama) {
       this.llmHelper = new LLMHelper()
-      this.llmHelper.switchToOllama(undefined, ollamaUrl)
     } else {
       // Try environment first (for development)
       let apiKey = process.env.GEMINI_API_KEY || ""
@@ -108,7 +107,7 @@ export class ProcessingHelper {
       console.log(`[ProcessingHelper] Applying saved model preference: ${modelPreference}`);
       if (modelPreference.startsWith('ollama-')) {
         const ollamaModelName = modelPreference.replace('ollama-', '');
-        await this.llmHelper.switchToOllama(ollamaModelName);
+        await this.llmHelper.switchToOllama(ollamaModelName, this.defaultOllamaUrl);
       } else {
         const customProviders = credManager.getCustomProviders();
         this.llmHelper.setModel(modelPreference, customProviders);
@@ -116,10 +115,10 @@ export class ProcessingHelper {
     } else if (savedOllamaModel) {
       // Support for older settings where only ollamaModel was set
       console.log(`[ProcessingHelper] Falling back to saved Ollama model: ${savedOllamaModel}`);
-      await this.llmHelper.switchToOllama(savedOllamaModel);
+      await this.llmHelper.switchToOllama(savedOllamaModel, this.defaultOllamaUrl);
     } else if (shouldPreferOllama) {
       console.log('[ProcessingHelper] No saved model preference found. Resolving best available Ollama model...');
-      await this.llmHelper.switchToOllama(undefined);
+      await this.llmHelper.switchToOllama(undefined, this.defaultOllamaUrl);
     } else {
       // Default fallback if no preference saved
       this.llmHelper.setModel(this.llmHelper.getBestAvailableModel());

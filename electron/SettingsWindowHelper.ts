@@ -4,7 +4,7 @@ import path from "node:path"
 const isDev = process.env.NODE_ENV === "development"
 
 const startUrl = isDev
-    ? "http://localhost:5180"
+    ? (process.env.ELECTRON_RENDERER_URL || "http://localhost:5180")
     : `file://${path.join(__dirname, "../dist/index.html")}`
 
 export class SettingsWindowHelper {
