@@ -27,7 +27,7 @@ export class ProcessingHelper {
 
     if (useOllama) {
       this.llmHelper = new LLMHelper()
-      this.llmHelper.switchToOllama(ollamaModel, ollamaUrl)
+      this.llmHelper.switchToOllama(undefined, ollamaUrl)
     } else {
       // Try environment first (for development)
       let apiKey = process.env.GEMINI_API_KEY || ""

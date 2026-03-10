@@ -55,6 +55,11 @@ function normalizeUserDataPath(): void {
 
 normalizeUserDataPath();
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 import { autoUpdater } from "electron-updater"
 require('dotenv').config();
 
@@ -1483,6 +1488,15 @@ async function initializeApp() {
 
   app.commandLine.appendSwitch("disable-background-timer-throttling")
 }
+
+app.on('second-instance', () => {
+  try {
+    const appState = AppState.getInstance();
+    appState.centerAndShowWindow();
+  } catch {
+    // Ignore until the first instance is fully initialized.
+  }
+});
 
 // Start the application
 initializeApp().catch(console.error)

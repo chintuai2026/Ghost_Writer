@@ -36,6 +36,7 @@ export function initializeIpcHandlers(appState: AppState): void {
     "get-custom-providers",
     "save-custom-provider",
     "delete-custom-provider",
+    "switch-to-custom-provider",
     "get-stored-credentials",
     "set-stt-provider",
     "get-stt-provider",
@@ -53,7 +54,6 @@ export function initializeIpcHandlers(appState: AppState): void {
     "set-azure-region",
     "set-ibmwatson-api-key",
     "test-stt-connection",
-    "native-audio-status",
   ]);
 
   // Safe handler registration
@@ -500,17 +500,6 @@ export function initializeIpcHandlers(appState: AppState): void {
     return settings.openAtLogin;
   });
 
-  // Native Audio Service Handlers
-  // Native Audio handlers removed as part of migration to driverless architecture
-  safeIpcHandle("native-audio-status", async () => {
-    // Always return true or pseudo-status since it's "driverless"
-    return { connected: true };
-  });
-
-  // ==========================================
-  // Meeting Lifecycle Handlers
-  // ==========================================
-
   // ==========================================
   // Meeting Lifecycle Handlers
   // ==========================================
@@ -951,7 +940,6 @@ export function initializeIpcHandlers(appState: AppState): void {
   // Native Audio Service Handlers
   // Native Audio handlers removed as part of migration to driverless architecture
   safeIpcHandle("native-audio-status", async () => {
-    // Always return true or pseudo-status since it's "driverless"
     return { connected: true };
   });
 
