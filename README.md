@@ -1,454 +1,215 @@
-<div align="center">
+# Ghost Writer
 
-<img src="assets/docs/hero_banner.png" width="100%" alt="Ghost Writer - AI Interview Copilot">
+Ghost Writer is an open-source desktop copilot for interviews and meetings.
+It combines local or cloud LLMs, local Whisper transcription, screenshot-aware answering, and a stealth-oriented overlay for fast in-session assistance.
 
-<br>
+## Version
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=for-the-badge)](docs/LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D4?style=for-the-badge&logo=apple)](https://github.com/chintuai2026/Ghost_Writer/releases)
-[![Electron](https://img.shields.io/badge/Electron-29-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
-[![Rust](https://img.shields.io/badge/Rust-Native-DEA584?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+Current official release: `v1.0.0`
 
-**Ghost Writer** is the ultimate stealth, local-first meeting & interview assistant built for professionals. High-stakes interviews and meetings, mastered.  
-Bring your own API keys for intelligent Cloud LLMs (OpenAI, DeepSeek, Gemini, Groq) or run 100% air-gapped via Ollama for absolute control over your intelligence data.
+## What It Does
 
-[Download](https://github.com/chintuai2026/Ghost_Writer/releases) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](docs/CHANGELOG.md)
+- Real-time transcription from microphone and system audio
+- Fast answer generation for live interviews and meetings
+- Screenshot attach and image-aware responses
+- Local-first operation with Ollama and local Whisper
+- Cloud LLM support for Gemini, OpenAI, Claude, Groq, DeepSeek, and custom OpenAI-compatible providers
+- Meeting history, summaries, and local RAG grounding
+- Guided onboarding, demo meeting seeding, and settings-based recovery actions
 
-</div>
+## Platforms
 
----
+- Windows: supported
+- macOS: Apple Silicon `arm64` `.dmg` build supported
 
-## ✨ Feature Highlights
+## Downloads
 
-<div align="center">
-<img src="assets/docs/feature_showcase.png" width="90%" alt="Ghost Writer Feature Showcase">
-</div>
+Official releases are published here:
 
-<br>
+- [GitHub Releases](https://github.com/chintuai2026/Ghost_Writer/releases)
 
-<table>
-<tr>
-<td width="50%">
+Expected asset names for `v1.0.0`:
 
-### 🎙️ Real-Time Transcription
-- **Hybrid Audio Pipeline**: Choose GPU-accelerated local transcription via `whisper.cpp` for ultimate privacy, or lightning-fast cloud STT (Deepgram, Groq, OpenAI).
-- **Native Audio Fallback**: Intelligent, automatic fallback to Web Audio API (`getDisplayMedia`) if the Rust native loopback module fails or is unavailable.
-- **Persistent Server Mode**: Model stays loaded in GPU VRAM for **~1-2s** latency
-- **Dual Audio Capture**: Simultaneous microphone + system audio loopback (WASAPI on Windows, ScreenCaptureKit on macOS) via native Rust module
-- **Smart Silence Detection**: Skips processing during silence to save GPU cycles
+- Windows: `Ghost.Writer.Setup.1.0.0.exe`
+- macOS: `Ghost.Writer.1.0.0-arm64.dmg`
 
-</td>
-<td width="50%">
+## Quick Start
 
-### 🧠 Universal Intelligence Engine
-- **Bring Your Own API / Locality**: Seamlessly route intelligence through industry-leading cloud providers (OpenAI, Claude, DeepSeek, Gemini, Groq) or switch to 100% local, air-gapped Ollama models. If you don't want data leaving your hardware, it simply doesn't.
-- **Visual Model Feedback**: Real-time "Ready" tickmarks and active model indicators in the UI so you always know which model is answering.
-- **Intelligent Meeting Grounding**: Answers are deeply rooted in your provided Resume and the ongoing context of your meeting.
-- **Temporal RAG Memory**: The system tracks the rolling window of conversational turns, flawlessly navigating complex follow-up questions without repetition.
+1. Download the latest installer from GitHub Releases.
+2. Install and launch Ghost Writer.
+3. Complete the Setup Wizard.
+4. Pick your model provider:
+   - local: Ollama
+   - cloud: Gemini, OpenAI, Claude, Groq, DeepSeek, custom provider
+5. Start a meeting session and use quick actions like `What to Answer`, `Recap`, or `Follow Up`.
 
-</td>
-</tr>
-<tr>
-<td width="50%">
+## Demo Setup
 
-### 👻 Invisible Overlay
-- **Screen-Share Safe**: Transparent overlay that's undetectable during screen sharing
-- **Always-On-Top**: Persistent floating window with keyboard shortcuts
-- **Disguise Mode**: Masquerade as common utility apps (Terminal, etc.)
-- **Content Protection**: Prevents screenshots and screen recording of the overlay
+Ghost Writer includes a built-in demo path for first-time testing.
 
+If the demo meeting is missing:
 
+1. Open `Settings`
+2. Go to `General`
+3. Use `Restore Demo Meeting`
 
-</td>
-<td width="50%">
+If you want to replay onboarding:
 
-### 🏢 Enterprise-Grade Control
-- **Hardware-Aware Status**: Real-time GPU detection with performance tiering (High/Medium/Low) and VRAM reporting in the UI.
-- **Monetization Engine**: Integrated Gumroad-powered licensing with atomic beta-user counting and 3-day automated trials.
-- **Global Kill Switch**: Absolute remote control via Supabase to enable/disable service or enter maintenance mode instantly.
-- **Usage Analytics**: Hardware-aware periodic heartbeats track application opens, active usage minutes, and meeting durations.
-- **Cost Tracking**: Real-time API usage monitoring with breakdowns by provider/model.
-- **Setup Wizard**: Guided first-run onboarding for hardware diagnosis and AI configuration.
+1. Open `Settings`
+2. Go to `General`
+3. Use `Replay Onboarding`
 
-</td>
-</tr>
-</table>
+These recovery actions were added specifically so packaged installs behave the same as development runs.
 
-<br>
+## Recommended Setup
 
-<div align="center">
-<h3>👻 Live Transparent Overlay</h3>
-<img src="assets/docs/overlay_showcase.png" width="90%" alt="Ghost Writer Invisible Overlay">
-</div>
+### Fastest text-first setup
 
----
+- STT: local Whisper or Deepgram
+- LLM: Gemini Flash or Groq for low latency
 
-## 🏗️ Architecture
+### Best local-first setup
 
-```mermaid
-graph TD
-    subgraph Capture
-        A[Microphone in] --> |Rust Native| C[Audio Buffer Pipeline]
-        B[System Audio Loopback] --> |Rust Native| C
-        C --> |Fallback Trigger| B2[Web Audio API Fallback]
-        B2 --> |IPC Raw Stream| C
-    end
-    C --> |16kHz PCM| D[Whisper STT Server]
-    D --> |Text Chunk| E{Intelligence Router}
-    E --> |Local Mode| F[Ollama]
-    E --> |Cloud APIs| G[Groq/OpenAI/Claude/DeepSeek]
-    F --> H[Stealth Overlay UI]
-    G --> H
-    H --> |Real-time Display| I[Electron Renderer]
-```
+- STT: local Whisper
+- LLM: Ollama
 
-Ghost Writer uses a layered architecture with clear separation of concerns:
+### Best multimodal interview setup
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | React 18 + Tailwind CSS + Framer Motion | Transparent overlay UI with animations |
-| **IPC Bridge** | Electron IPC (context-isolated) | Secure communication between renderer and main process |
-| **LLM Pipeline** | TypeScript | Intent classification, prompt engineering, post-processing |
-| **RAG Engine** | all-MiniLM-L6-v2 + SQLite FTS | Local semantic search and conversation memory |
-| **Whisper STT** | whisper.cpp server (CUDA/Metal) | GPU-accelerated speech-to-text (NVIDIA/Apple Silicon) |
-| **Audio Capture** | Rust (N-API) | Native microphone + system audio loopback (WASAPI/ScreenCaptureKit) |
-| **Database (Local)** | SQLite (better-sqlite3) | Meeting history, embeddings, credentials (encrypted) |
-| **Cloud Backend** | Supabase (PostgreSQL + Edge Functions) | Global licensing, usage analytics, and remote master control |
+- Use a vision-capable model for screenshot answering
+- Attach screenshots with `Ctrl/Cmd+H`
 
-> 📖 For detailed architecture documentation, see [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-> 🆘 For audio-specific issues, see the [Troubleshooting Guide](docs/troubleshooting_audio.md)
+## Keyboard Shortcuts
 
----
+- `Ctrl/Cmd+B` or `Alt+G`: toggle visibility
+- `Ctrl/Cmd+Shift+Space`: show and center window
+- `Ctrl/Cmd+R` or `Alt+C`: reset current state
+- `F9`: start or end meeting session
+- `F8` or `Ctrl/Cmd+J`: quick "what should I answer"
+- `Ctrl/Cmd+Enter`: process current context
+- `Ctrl/Cmd+H`: attach screenshot
+- `Ctrl/Cmd+Shift+H`: contextual selection capture
 
-## 🚀 Getting Started
+## Architecture
 
-Ghost Writer is designed for **one-click deployment**. You don't need to be a developer to use it.
+Main parts of the app:
 
-### 1. Download & Install
-1. **[Download the Latest Release](https://github.com/chintuai2026/Ghost_Writer/releases)** (`.exe` for Windows, `.dmg` for macOS).
-2. Run the installer.
-   - **macOS Note**: If you see a security warning, Right-Click -> Open the app (unnotarized build).
-3. The **Setup Wizard** will launch automatically to guide you through hardware diagnosis and AI configuration.
+- `electron/`: Electron main process, IPC, services, audio, LLM orchestration
+- `src/`: React renderer UI
+- `native-module/`: Rust native audio capture module
+- `tests/`: validation, smoke tests, fallback tests, e2e checks
+- `docs/`: project docs and landing page assets
 
-### 2. Prerequisites (Recommendations)
-| Component | Required | Why? | Recommendation |
-|-----------|----------|------|----------------|
-| **NVIDIA GPU** | Optional* | Fast local transcription | Dedicated GPU with 8GB+ VRAM for high-tier local performance. |
-| **Ollama** | Optional | Free local LLM | Download from [ollama.com](https://ollama.com) to run models like `qwen2.5:7b` locally. |
-| **API Keys** | Optional | High-accuracy cloud AI | Get a **free** key from [Groq](https://console.groq.com) for ultra-fast, high-quality responses. |
+Key runtime pieces:
 
-*\*If no GPU is detected, Ghost Writer will automatically fallback to CPU or Cloud if keys are provided.*
+- local Whisper transcription via `whisper.cpp`
+- local embeddings and RAG-backed context retrieval
+- provider routing with fallback support
+- multimodal screenshot preprocessing and OCR-assisted image prompts
 
----
+## Development
 
-## 🛠️ Developer Guide
+### Requirements
 
-If you want to build Ghost Writer from source:
+- Node.js `20` or `22+`
+- npm `10+`
+- Rust stable toolchain
 
-### Prerequisites
-- **Node.js**: 20+
-- **Rust**: Latest stable (with `x86_64-pc-windows-msvc` or `aarch64-apple-darwin` targets)
-- **GPU**: NVIDIA (CUDA) or Apple Silicon (Metal) for acceleration
+The repo includes:
 
-### Build Instructions
+- [.nvmrc](.nvmrc)
+- `package.json` engines for the supported Node versions
+
+### Install
+
 ```bash
-# 1. Clone & Install
 git clone https://github.com/chintuai2026/Ghost_Writer.git
 cd Ghost_Writer
 npm install
-
-# 2. Build Native Audio Module
-npm run build:native
-
-# 3. Run Development
-npm run app:dev
-
-# 4. Pack for Distribution
-npm run app:build
 ```
 
----
-
-## 🎯 Usage Guide
-
-### During Interviews
-
-| Button | Action | Best For |
-|--------|--------|----------|
-| **What to Answer** | Analyzes full conversation context and suggests the best response | Immediately after interviewer asks a question |
-| **Shorten** | Condenses verbose answers to concise 1-2 sentence summaries | When you need a quick, punchy reply |
-| **Recap** | Summarizes the entire conversation with key discussion points | Mid-interview to review what's been covered |
-| **Follow Up** | Generates strategic questions to ask the interviewer | End of interview "Do you have questions?" |
-| **Answer** | Manual query with full conversation context awareness | Specific questions you want help with |
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+K` | Global Spotlight Search — instant AI chat |
-| `Ctrl+H` | **Attach Screenshot** — Capture screen and add to chat |
-| `Ctrl+Shift+H` | Toggle overlay visibility |
-| `Ctrl+Shift+M` | Start/stop meeting |
-
----
-
-## 🎙️ Speech-to-Text Engine
-
-Ghost Writer uses a **persistent whisper-server** architecture for fast, GPU-accelerated transcription:
-
-```
-┌──────────────────────────────────────────────────┐
-│                 Audio Pipeline                    │
-│                                                   │
-│  Microphone ──→ Rust DSP ──→ 16kHz PCM ──┐       │
-│                  (NAPI)                   │       │
-│                                           ▼       │
-│  System Audio ──→ Rust DSP ──→ 16kHz PCM ──→ WAV  │
-│   (Loopback)      (NAPI)                  │       │
-│                                           ▼       │
-│                              ┌─────────────────┐  │
-│                              │ whisper-server   │  │
-│                              │ (HTTP :8178)     │  │
-│                              │                  │  │
-│                              │ Model loaded     │  │
-│                              │ in GPU VRAM      │  │
-│                              │ (~1-2s/chunk)    │  │
-│                              └────────┬────────┘  │
-│                                       │           │
-│                                       ▼           │
-│                              Transcript text      │
-│                              → LLM Pipeline       │
-└──────────────────────────────────────────────────┘
-```
-
-### Model Comparison
-
-| Model | Size | Accuracy | Speed (GPU) | Best For |
-|-------|------|----------|-------------|----------|
-| **Small** | 465 MB | ~85% | ~1.3s/chunk | Fast feedback, casual meetings |
-| **Medium** | 1.5 GB | ~92% | ~1.6s/chunk* | High-stakes interviews |
-
-> \* After initial model loading (~15-20s). The whisper-server keeps the model in VRAM, so subsequent chunks are near-instant.
-
----
-
-## 🛠️ Development
-
-### Commands Reference
-
-| Command | Description |
-|---------|-------------|
-| `npm run app:dev` | Start full development environment (Vite + Electron) |
-| `npm run build:native` | Compile Rust native audio module |
-| `npm run build` | Build frontend for production |
-| `npm run dist` | Create distributable installer |
-| `npm run lint` | Run ESLint checks |
-| `npm test` | Run all test suites |
-
-### Project Structure
-
-```
-Ghost_Writer/
-├── electron/                   # Electron main process
-│   ├── audio/                  # Audio capture & transcription
-│   │   ├── LocalWhisperSTT.ts  # Whisper server/CLI integration
-│   │   ├── WhisperModelManager.ts  # Model download & management
-│   │   ├── MicrophoneCapture.ts    # Native mic capture wrapper
-│   │   └── SystemAudioCapture.ts   # System audio loopback wrapper
-│   ├── llm/                    # Modular LLM processing pipeline
-│   │   ├── LLMOrchestrator.ts  # Main router & fallback manager
-│   │   ├── providers/          # Isolated API integrations
-│   │   │   ├── GroqProvider.ts
-│   │   │   ├── OpenAIProvider.ts
-│   │   │   ├── OllamaProvider.ts
-│   │   │   ├── AnthropicProvider.ts
-│   │   │   ├── GeminiProvider.ts
-│   │   │   ├── DeepSeekProvider.ts
-│   │   │   └── CustomProvider.ts
-│   │   ├── IntentClassifier.ts # Interview question type detection
-│   │   ├── WhatToAnswerLLM.ts  # Core AI response generation
-│   │   ├── prompts.ts          # System prompts & persona
-│   │   ├── postProcessor.ts    # Response cleanup & formatting
-│   │   └── transcriptCleaner.ts    # Transcript normalization
-│   ├── rag/                    # Retrieval-Augmented Generation
-│   │   ├── RAGManager.ts       # Chunk, embed, and store transcripts
-│   │   ├── RAGRetriever.ts     # Semantic search over history
-│   │   ├── VectorStore.ts      # SQLite-backed vector storage
-│   │   ├── EmbeddingPipeline.ts    # Batch embedding processor
-│   │   └── LocalEmbeddingManager.ts # all-MiniLM-L6-v2 pipeline
-│   ├── ipc/                    # Modular IPC handlers
-│   ├── services/               # Credentials, install management
-│   ├── utils/                  # Logging, rate limiting, cost tracking
-│   ├── db/                     # SQLite database management
-│   ├── main.ts                 # Application entry point
-│   └── preload.ts              # Context bridge (security boundary)
-├── src/                        # React renderer (frontend)
-│   ├── components/
-│   │   ├── GhostWriterInterface.tsx  # Main overlay UI
-│   │   ├── SettingsOverlay.tsx       # Settings panel
-│   │   ├── SetupWizard.tsx           # First-run onboarding
-│   │   └── settings/                 # Settings sub-panels
-│   └── App.tsx                 # Root component
-├── native-module/              # Rust native audio (N-API)
-│   └── src/
-│       ├── lib.rs              # Module entry point
-│       ├── microphone.rs       # Mic capture with WASAPI
-│       └── speaker/
-│           └── windows.rs      # System audio loopback (WASAPI)
-├── .github/workflows/          # CI/CD pipeline
-├── assets/                     # Icons, images, docs
-└── docs/                       # Additional documentation
-```
-
-### Environment Variables
+### Run in development
 
 ```bash
-# API Keys (can also be configured in the UI)
-GROQ_API_KEY=your_groq_key
-OPENAI_API_KEY=your_openai_key
-CLAUDE_API_KEY=your_claude_key
-GEMINI_API_KEY=your_gemini_key
-
-# Development
-NODE_ENV=development
-
-# Logging
-LOG_LEVEL=info
-SENTRY_DSN=your_sentry_dsn     # Optional crash reporting
+npm run build:native
+npm run app:dev
 ```
 
----
+### Run checks
 
-## 🔌 Supported Providers
+```bash
+npm run lint
+npx tsc -p electron/tsconfig.json --noEmit
+npm test
+```
 
-### LLM Providers
+### Build production artifacts
 
-| Provider | Models | Tier | Latency |
-|----------|--------|------|---------|
-| **Groq** | Llama 3.3 70B | Free | ⚡ ~0.5s |
-| **Google** | Gemini 1.5 Flash/Pro | Free tier available | ⚡ ~1s |
-| **Anthropic** | Claude 3.5 Sonnet | Paid | ~2s |
-| **OpenAI** | GPT-4o | Paid | ~2s |
-| **DeepSeek** | DeepSeek-V3 | Affordable | ~1.5s |
-| **Ollama** | qwen2.5, llava (vision) | Free (local) | ⚡ ~1s (GPU) |
-| **Custom** | Any OpenAI-compatible API | Varies | Varies |
+```bash
+npm run app:build -- --win --x64
+```
 
-### Speech-to-Text Providers
+This produces clean deliverables in `artifacts/`.
 
-| Provider | Type | Latency | Cost |
-|----------|------|---------|------|
-| **Local Whisper** (default) | GPU-accelerated local | ~1-2s | Free |
-| **Groq STT** | Cloud API | ~0.5s | Free tier |
-| **OpenAI Whisper** | Cloud API | ~2s | Paid |
-| **Deepgram** | Cloud API | ~0.3s | Paid |
-| **Azure Speech** | Cloud API | ~1s | Paid |
+## Release Notes For Maintainers
 
----
+The packaged app can download an external runtime bundle from the GitHub release for the current app version.
 
-## 🐛 Troubleshooting
+Important:
 
-<details>
-<summary><b>Audio not working</b></summary>
+- the release should include `ai-runtime.zip`
+- the app looks for that asset at:
+  - `https://github.com/chintuai2026/Ghost_Writer/releases/download/v<appVersion>/ai-runtime.zip`
 
-1. Check microphone permissions in Windows Settings → Privacy → Microphone
-2. Use the built-in audio test (Settings → Audio → Test Microphone)
-3. Ensure your audio device outputs 16-bit PCM at 44.1kHz or 48kHz
-</details>
+If `ai-runtime.zip` is not uploaded to the release, runtime installation will fail for users who need that bundle.
 
-<details>
-<summary><b>Whisper transcription is slow</b></summary>
+## Environment Variables
 
-1. Check logs for `✅ whisper-server ready` — if missing, the server failed to start
-2. The first transcription after starting a meeting takes ~15-20s (model loading)
-3. Subsequent transcriptions should be ~1-2s
-4. Switch to the **Small** model in Settings for faster (but less accurate) transcription
-5. Ensure you have an NVIDIA GPU with CUDA support
-</details>
+Typical optional variables:
 
-<details>
-<summary><b>API errors or high latency</b></summary>
+```bash
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+CLAUDE_API_KEY=
+GROQ_API_KEY=
+DEEPSEEK_API_KEY=
+LOG_LEVEL=info
+NODE_ENV=development
+```
 
-1. Verify your API keys are valid in Settings
-2. Switch to **Groq** (free, fastest) or **Ollama** (local, free) for lower latency
-3. Check Settings → Usage Statistics for cost and rate limit information
-</details>
+See [.env.example](.env.example) for the full example template.
 
-<details>
-<summary><b>Build errors with native module</b></summary>
+## Notes About Stealth
 
-1. Ensure Rust toolchain is installed: `rustup show`
-2. Run `npm run build:native` separately to see detailed errors
-3. On Windows, ensure Visual Studio Build Tools are installed
-</details>
+Ghost Writer includes stealth-oriented behavior such as content protection, disguise options, and overlay-first usage.
+Do not describe it as universally undetectable without validating the exact target app, OS, and screen-sharing mode.
 
----
+## Current State
 
-### 🚀 Hardware-Aware Optimization & Flexible Privacy
-- **Scalable Performance**: Automatically detects GPU VRAM (e.g., 8GB+ dedicated GPUs) and optimizes threads (`num_thread: 8`) and context windows (`num_ctx: 32k`) for local models. Users without capable GPUs can seamlessly switch to ultra-fast cloud providers.
-- **Instant Pre-loading**: Models are "warmed up" in VRAM background the moment they are selected, reducing cold-start latency to zero.
-- **Smart Summarization**: Automatically switches to lightning-fast text models (e.g., qwen2.5:7b) for transcripts, even if a heavy VL model is currently active for vision tasks.
-- **Offline Reliability**: Fully functional "Zero-Cloud" mode by leveraging high-accuracy local Ollama + Whisper.
+`v1.0.0` is the first official release baseline.
 
----
+It includes:
 
-- [x] Real-time transcription with GPU acceleration
-- [x] Multi-provider LLM support (6+ providers)
-- [x] RAG pipeline with local embeddings
-- [x] Whisper Server Mode (~1-2s latency)
-- [x] Hardware-aware model selection & optimization
-- [x] Visual model status & active use indicators
-- [x] Professional transcript summarization pipeline
-- [x] macOS support with ScreenCaptureKit loopback
-- [x] Apple Silicon (Metal) acceleration support
-- [ ] Multi-language transcription support
-- [ ] Shareable meeting notes with polished exports
+- packaged Windows and macOS release flow
+- cleaned release artifact naming
+- corrected packaged app user-data handling
+- onboarding replay and demo restoration
+- fixed model-selection propagation
+- improved screenshot-aware chat flow
+- CI aligned with supported Node versions
 
----
+## License
 
-## 🤝 Community & Support
+Ghost Writer is licensed under the [AGPL-3.0 License](docs/LICENSE).
 
-Ghost Writer is developed for the community. If you find it helpful, please consider supporting the project:
+## Contributing
 
-- **[Star the Repository](https://github.com/chintuai2026/Ghost_Writer)**: Help more people discover the project.
-- **[Contribute](docs/CONTRIBUTING.md)**: Open an issue or submit a pull request.
+- open an issue for bugs or feature requests
+- open a pull request for fixes and improvements
+- keep changes aligned with the current Node and Electron toolchain
 
----
-**Quick overview:**
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes with [Conventional Commits](https://www.conventionalcommits.com/)
-4. Push and open a Pull Request
+Useful docs:
 
----
-
-## ⚖️ License
-
-Ghost Writer is open-source software licensed under the **[AGPL-3.0 License](docs/LICENSE)**.  
-This ensures that any modifications to the codebase remain open source.
-
----
-
-## 🙏 Acknowledgments
-
-| Technology | Purpose |
-|-----------|---------|
-| [Electron](https://www.electronjs.org/) | Cross-platform desktop framework |
-| [React](https://react.dev/) | UI component library |
-| [Rust](https://www.rust-lang.org/) | High-performance native audio capture |
-| [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | Local speech-to-text engine |
-| [Tailwind CSS](https://tailwindcss.com/) | Utility-first CSS framework |
-| [Framer Motion](https://www.framer.com/motion/) | Animation library |
-| [SQLite](https://www.sqlite.org/) | Embedded database |
-| [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | Local sentence embeddings |
-
----
-
-<div align="center">
-
-**Built with ❤️ for professionals who want every edge.**
-
-[⬆ Back to Top](#)
-
-</div>
+- [Architecture](docs/ARCHITECTURE.md)
+- [Changelog](docs/CHANGELOG.md)
+- [Contributing](docs/CONTRIBUTING.md)
+- [Security](docs/SECURITY.md)

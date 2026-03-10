@@ -17,6 +17,7 @@ export default [
         __dirname: 'readonly',
         __filename: 'readonly',
         global: 'readonly',
+        globalThis: 'readonly',
         window: 'readonly',
         document: 'readonly',
         navigator: 'readonly',
@@ -43,9 +44,6 @@ export default [
         require: 'readonly',
         module: 'readonly',
         exports: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        globalThis: 'readonly',
         localStorage: 'readonly',
         sessionStorage: 'readonly',
         btoa: 'readonly',
@@ -78,7 +76,7 @@ export default [
     }
   },
   {
-    files: ['test*.js', 'worker-script/**/*.js'],
+    files: ['tests/**/*.js'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
       'no-undef': 'off'
@@ -89,6 +87,7 @@ export default [
       'dist/',
       'dist-electron/',
       'release/',
+      'artifacts/',
       'node_modules/',
       'native-module/target/',
       'native-module/src/',
