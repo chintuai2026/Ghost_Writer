@@ -1174,57 +1174,36 @@ export class LLMHelper extends EventEmitter {
     groqSystemPrompt?: string
   }): Promise<string> {
     const { systemPrompt, context, groqSystemPrompt } = params;
-    const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-    const tokenCount = estimateTokens(context);
+    const activeProvider = this.getCurrentProvider();
+    const selectedSystemPrompt =
+      activeProvider === 'groq' && groqSystemPrompt
+        ? groqSystemPrompt
+        : systemPrompt;
+    const timeoutMs =
+      this.useOllama || this.airGapMode
+        ? 300000
+        : 45000;
 
-    // 1: Groq (if text-only and within limits)
-    if (this.groqClient && tokenCount < 100000) {
-      try {
-        const response = await this.withTimeout(
-          this.groqClient.chat.completions.create({
-            model: GROQ_MODEL,
-            messages: [
-              { role: "system", content: groqSystemPrompt || systemPrompt },
-              { role: "user", content: `Context:\n${context}` }
-            ],
-            temperature: 0.3,
-            max_tokens: 8192,
-            stream: false
-          }),
-          45000,
-          "Groq Summary"
-        );
-        const text = response.choices[0]?.message?.content || "";
-        if (text.trim().length > 0) return this.processResponse(text);
-      } catch (e: any) { }
-    }
+    const payload: ChatPayload = {
+      message: "Return only the requested meeting output for the supplied context.",
+      context,
+      systemPrompt: selectedSystemPrompt,
+    };
 
-    // 2: Gemini Flash
-    const contents = [{ text: `${systemPrompt}\n\nCONTEXT:\n${context}` }];
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const text = await this.withTimeout(
-          this.generateWithFlash(contents),
-          45000,
-          `Gemini Flash Summary (Attempt ${attempt})`
-        );
-        if (text.trim().length > 0) return this.processResponse(text);
-      } catch (e: any) {
-        if (attempt < 3) await this.delay(1000 * attempt);
-      }
-    }
-
-    // 3: Ollama local summarization fallback
     try {
       const response = await this.withTimeout(
-        this.callOllamaWithModel(this.ollamaModel, `${systemPrompt}\n\nCONTEXT:\n${context}`),
-        300000,
-        "Ollama Summary"
+        this.chatWithGemini(payload),
+        timeoutMs,
+        `${this.getCurrentModel()} Meeting Summary`
       );
-      if (response && response.trim().length > 0) return this.processResponse(response);
-    } catch (e: any) { }
+      if (response.trim().length > 0) {
+        return response;
+      }
+    } catch (error) {
+      console.warn(`[LLMHelper] Selected model summary generation failed for ${this.getCurrentModel()}:`, error);
+    }
 
-    throw new Error("Failed to generate summary after all fallback attempts.");
+    throw new Error(`Failed to generate summary with selected model: ${this.getCurrentModel()}`);
   }
 
   // ─── UNIVERSAL CHAT (NON-STREAMING) ───────────────────────────────
