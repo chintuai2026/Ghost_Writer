@@ -1,15 +1,19 @@
--- 🏥 Dynamic Fix for trial_duration_days error
+-- Dynamic fix for trial_duration_days error
 -- This script ensures the column exists and updates the RPC to handle missing fields gracefully.
 
--- 1. Ensure column exists (Idempotent)
-DO $$ 
-BEGIN 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='global_config' AND column_name='trial_duration_days') THEN 
-        ALTER TABLE global_config ADD COLUMN trial_duration_days integer DEFAULT 3;
-    END IF; 
+-- 1. Ensure column exists (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'global_config' AND column_name = 'trial_duration_days'
+  ) THEN
+    ALTER TABLE global_config ADD COLUMN trial_duration_days INTEGER DEFAULT 3;
+  END IF;
 END $$;
 
--- 2. Drop and Recreate Function to refresh execution plan and field metadata
+-- 2. Drop and recreate function to refresh execution plan and field metadata
 DROP FUNCTION IF EXISTS register_beta_user(text, text, text);
 
 CREATE OR REPLACE FUNCTION register_beta_user(
@@ -64,15 +68,19 @@ BEGIN
     RETURNING * INTO v_config;
   END IF;
 
-  -- SAFELY extract trial_duration_days using JSONB to avoid "no field" runtime errors
-  v_trial_days := COALESCE((to_jsonb(v_config)->>'trial_duration_days')::int, 3);
+  -- Safely extract trial_duration_days using JSONB to avoid runtime field errors
+  v_trial_days := COALESCE((to_jsonb(v_config) ->> 'trial_duration_days')::int, 3);
 
   -- Return everything
   RETURN QUERY SELECT
     v_config.is_beta_active OR v_is_new,
     v_is_new,
     v_install.first_opened_at,
-    GREATEST(0, v_install.has_paid_license::int * 9999 + (v_trial_days - EXTRACT(EPOCH FROM (now() - v_install.first_opened_at)) / 86400))::NUMERIC(10,2),
+    GREATEST(
+      0,
+      v_install.has_paid_license::int * 9999 +
+      (v_trial_days - EXTRACT(EPOCH FROM (now() - v_install.first_opened_at)) / 86400)
+    )::NUMERIC(10,2),
     v_install.has_paid_license,
     v_config.total_beta_users,
     v_config.is_beta_active,

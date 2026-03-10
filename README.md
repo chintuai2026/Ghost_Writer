@@ -1,19 +1,88 @@
 # Ghost Writer
 
-Ghost Writer is an open-source desktop copilot for interviews and meetings.
-It combines local or cloud LLMs, local Whisper transcription, screenshot-aware answering, and a stealth-oriented overlay for fast in-session assistance.
+<div align="center">
+  <img src="assets/docs/hero_banner.png" width="100%" alt="Ghost Writer hero banner">
+
+  <br>
+
+  [![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=for-the-badge)](docs/LICENSE)
+  [![Release](https://img.shields.io/badge/release-v1.0.0-0ea5e9?style=for-the-badge)](https://github.com/chintuai2026/Ghost_Writer/releases)
+  [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20arm64-111827?style=for-the-badge)](https://github.com/chintuai2026/Ghost_Writer/releases)
+  [![Electron](https://img.shields.io/badge/Electron-29-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
+  [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
+  [![Rust](https://img.shields.io/badge/Rust-Native-DEA584?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
+
+  Ghost Writer is an open-source desktop copilot for interviews and meetings.
+  It combines local or cloud LLMs, local Whisper transcription, screenshot-aware answering, and a stealth-oriented overlay for fast in-session assistance.
+
+  [Download](https://github.com/chintuai2026/Ghost_Writer/releases) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](docs/CHANGELOG.md) · [Contributing](docs/CONTRIBUTING.md)
+</div>
+
+---
 
 ## Version
 
 Current official release: `v1.0.0`
 
-## What It Does
+## Product Snapshot
+
+<div align="center">
+  <img src="assets/docs/feature_showcase.png" width="92%" alt="Ghost Writer feature showcase">
+</div>
+
+<table>
+<tr>
+<td width="50%">
+
+### Real-time transcription
+- Local Whisper with persistent server mode
+- Cloud STT options including Deepgram, Groq, OpenAI, Azure, and IBM
+- Dual audio capture from microphone and system audio
+- Fast chunking and transcript cleanup for live answers
+
+</td>
+<td width="50%">
+
+### Flexible intelligence routing
+- Local-first with Ollama
+- Cloud LLM support for Gemini, OpenAI, Claude, Groq, DeepSeek, and custom OpenAI-compatible providers
+- Screenshot-aware prompts and image analysis
+- RAG-backed grounding from meeting history and saved context
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### Stealth-oriented overlay
+- Overlay-first UI with global shortcuts
+- Content-protection and disguise-oriented behavior
+- Screenshot attach and quick-answer actions
+- Guided onboarding and recovery actions for packaged installs
+
+</td>
+<td width="50%">
+
+### Packaged for open-source release
+- Windows installer flow
+- macOS Apple Silicon `.dmg` flow
+- Clean `artifacts/` output for maintainers
+- CI aligned to supported Node versions
+
+</td>
+</tr>
+</table>
+
+<div align="center">
+  <img src="assets/docs/overlay_showcase.png" width="82%" alt="Ghost Writer overlay showcase">
+</div>
+
+## Core Capabilities
 
 - Real-time transcription from microphone and system audio
 - Fast answer generation for live interviews and meetings
 - Screenshot attach and image-aware responses
 - Local-first operation with Ollama and local Whisper
-- Cloud LLM support for Gemini, OpenAI, Claude, Groq, DeepSeek, and custom OpenAI-compatible providers
 - Meeting history, summaries, and local RAG grounding
 - Guided onboarding, demo meeting seeding, and settings-based recovery actions
 
@@ -38,12 +107,10 @@ Expected asset names for `v1.0.0`:
 1. Download the latest installer from GitHub Releases.
 2. Install and launch Ghost Writer.
 3. Complete the Setup Wizard.
-4. Pick your model provider:
-   - local: Ollama
-   - cloud: Gemini, OpenAI, Claude, Groq, DeepSeek, custom provider
+4. Pick your model provider.
 5. Start a meeting session and use quick actions like `What to Answer`, `Recap`, or `Follow Up`.
 
-## Demo Setup
+## Demo And Onboarding
 
 Ghost Writer includes a built-in demo path for first-time testing.
 
@@ -59,14 +126,24 @@ If you want to replay onboarding:
 2. Go to `General`
 3. Use `Replay Onboarding`
 
-These recovery actions were added specifically so packaged installs behave the same as development runs.
+These recovery actions are important for packaged installs because they keep the installed app behavior aligned with development runs.
+
+```mermaid
+flowchart LR
+    A["Launch Ghost Writer"] --> B["Run Setup Wizard"]
+    B --> C["Choose STT + LLM provider"]
+    C --> D["Start meeting session"]
+    D --> E["Use quick actions or manual answer box"]
+    E --> F["Need sample data? Restore Demo Meeting"]
+    E --> G["Need first-run flow again? Replay Onboarding"]
+```
 
 ## Recommended Setup
 
 ### Fastest text-first setup
 
 - STT: local Whisper or Deepgram
-- LLM: Gemini Flash or Groq for low latency
+- LLM: Gemini Flash, Groq, or other low-latency cloud model
 
 ### Best local-first setup
 
@@ -91,20 +168,35 @@ These recovery actions were added specifically so packaged installs behave the s
 
 ## Architecture
 
-Main parts of the app:
+```mermaid
+graph TD
+    A["Microphone input"] --> C["Native audio pipeline"]
+    B["System audio loopback"] --> C
+    C --> D["Whisper STT"]
+    D --> E{"LLM routing"}
+    E --> F["Ollama / local models"]
+    E --> G["Cloud providers"]
+    H["Screenshot + OCR"] --> E
+    I["RAG / meeting memory"] --> E
+    F --> J["Overlay answer UI"]
+    G --> J
+```
 
-- `electron/`: Electron main process, IPC, services, audio, LLM orchestration
-- `src/`: React renderer UI
-- `native-module/`: Rust native audio capture module
-- `tests/`: validation, smoke tests, fallback tests, e2e checks
-- `docs/`: project docs and landing page assets
+Ghost Writer uses a layered desktop architecture with clear separation of concerns:
 
-Key runtime pieces:
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Frontend | React 18 + Tailwind CSS + Framer Motion | Overlay UI, settings, onboarding |
+| IPC bridge | Electron IPC with context isolation | Secure communication between renderer and main process |
+| LLM orchestration | TypeScript helpers and providers | Routing, prompt construction, fallback, post-processing |
+| RAG engine | all-MiniLM-L6-v2 + SQLite FTS | Local semantic memory and context retrieval |
+| Whisper STT | `whisper.cpp` server | GPU-accelerated or local speech-to-text |
+| Audio capture | Rust N-API module | Native microphone + system audio loopback |
+| Storage | SQLite + encrypted credentials | Meetings, embeddings, preferences, credentials |
 
-- local Whisper transcription via `whisper.cpp`
-- local embeddings and RAG-backed context retrieval
-- provider routing with fallback support
-- multimodal screenshot preprocessing and OCR-assisted image prompts
+More detail:
+
+- [Architecture](docs/ARCHITECTURE.md)
 
 ## Development
 

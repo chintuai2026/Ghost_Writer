@@ -16,9 +16,13 @@ CREATE TABLE IF NOT EXISTS global_config (
 );
 
 -- Ensure trial_duration_days exists if table was created before this version
-DO $$ 
-BEGIN 
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='global_config' AND column_name='trial_duration_days') THEN
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'global_config' AND column_name = 'trial_duration_days'
+  ) THEN
     ALTER TABLE global_config ADD COLUMN trial_duration_days INTEGER DEFAULT 3;
   END IF;
 END $$;
@@ -35,7 +39,7 @@ CREATE TABLE IF NOT EXISTS installations (
   last_seen_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. Checkout session bridge (desktop ↔ web ↔ Gumroad)
+-- 3. Checkout session bridge (desktop -> web -> Gumroad)
 CREATE TABLE IF NOT EXISTS checkout_sessions (
   session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   machine_id TEXT REFERENCES installations(machine_id),
@@ -47,7 +51,7 @@ CREATE TABLE IF NOT EXISTS checkout_sessions (
 
 -- 4. Atomic beta registration function
 --    Prevents race conditions when multiple users register simultaneously
-DROP FUNCTION IF EXISTS register_beta_user(text,text,text);
+DROP FUNCTION IF EXISTS register_beta_user(text, text, text);
 CREATE OR REPLACE FUNCTION register_beta_user(
   p_machine_id TEXT,
   p_version TEXT DEFAULT NULL,
@@ -102,17 +106,21 @@ BEGIN
   -- Return everything needed by the app
   -- Use COALESCE(v_config.trial_duration_days, 3) to protect against runtime issues if the column was somehow missed
   RETURN QUERY SELECT
-    v_config.is_beta_active OR v_is_new, -- is_beta
-    v_is_new,                            -- is_new_user
-    v_install.first_opened_at,           -- first_opened
-    GREATEST(0, v_install.has_paid_license::int * 9999 + (COALESCE(v_config.trial_duration_days, 3) - EXTRACT(EPOCH FROM (now() - v_install.first_opened_at)) / 86400))::NUMERIC(10,2), -- remaining_days (large if paid)
-    v_install.has_paid_license,          -- has_license
-    v_config.total_beta_users,           -- beta_users_count
-    v_config.is_beta_active,             -- is_beta_period
-    v_install.first_opened_at <= v_config.updated_at AND v_config.is_beta_active = false, -- registered_during_beta
-    v_config.is_service_active,          -- is_service_active
-    v_config.maintenance_message,        -- maintenance_message
-    v_license_key;                       -- license_key
+    v_config.is_beta_active OR v_is_new,
+    v_is_new,
+    v_install.first_opened_at,
+    GREATEST(
+      0,
+      v_install.has_paid_license::int * 9999 +
+      (COALESCE(v_config.trial_duration_days, 3) - EXTRACT(EPOCH FROM (now() - v_install.first_opened_at)) / 86400)
+    )::NUMERIC(10,2),
+    v_install.has_paid_license,
+    v_config.total_beta_users,
+    v_config.is_beta_active,
+    v_install.first_opened_at <= v_config.updated_at AND v_config.is_beta_active = false,
+    v_config.is_service_active,
+    v_config.maintenance_message,
+    v_license_key;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -140,16 +148,16 @@ CREATE POLICY "Anyone can manage checkout sessions"
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' 
-    AND schemaname = 'public' 
-    AND tablename = 'checkout_sessions'
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'checkout_sessions'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE checkout_sessions;
   END IF;
 END $$;
 
--- 7. Performance Indexes (Enterprise Grade)
+-- 7. Performance indexes
 CREATE INDEX IF NOT EXISTS idx_installations_paid ON installations(has_paid_license);
 CREATE INDEX IF NOT EXISTS idx_checkout_machine ON checkout_sessions(machine_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_status ON checkout_sessions(status);

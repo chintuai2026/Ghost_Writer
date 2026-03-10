@@ -1,6 +1,6 @@
 /**
  * Supabase Edge Function: gumroad-webhook
- * 
+ *
  * Receives POST from Gumroad after a successful sale.
  * Extracts the license_key and session_id from URL params,
  * then updates the checkout_sessions table to trigger
@@ -16,14 +16,13 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 serve(async (req: Request) => {
-    // Only accept POST
     if (req.method !== 'POST') {
         return new Response('Method not allowed', { status: 405 });
     }
 
     try {
-        // Gumroad sends form-urlencoded OR JSON data
-        let body: any = {};
+        // Gumroad sends form-urlencoded or JSON data.
+        let body: Record<string, any> = {};
         const contentType = req.headers.get('content-type') || '';
 
         if (contentType.includes('application/json')) {
@@ -35,14 +34,12 @@ serve(async (req: Request) => {
             });
         }
 
-        // Extract license key (always present in webhook)
         const licenseKey = body.license_key;
 
-        // Session ID & Machine ID can come from url_params or direct fields
+        // Session ID and machine ID can come from url_params or direct fields.
         let sessionId: string | null = null;
         let machineId: string | null = null;
 
-        // 1. Try url_params field (our primary URL param approach)
         const urlParamsRaw = body.url_params;
         console.log(`[gumroad-webhook] Raw url_params type: ${typeof urlParamsRaw}, value:`, urlParamsRaw);
 
@@ -63,7 +60,6 @@ serve(async (req: Request) => {
             }
         }
 
-        // 2. Try direct custom_fields
         if (!sessionId || !machineId) {
             const customFieldsRaw = body.custom_fields;
             if (customFieldsRaw) {
@@ -71,16 +67,16 @@ serve(async (req: Request) => {
                     const customFields = JSON.parse(customFieldsRaw);
                     if (!sessionId) sessionId = customFields.session_id || null;
                     if (!machineId) machineId = customFields.machine_id || null;
-                } catch { /* ignore */ }
+                } catch {
+                    // Ignore malformed custom_fields and continue with fallbacks.
+                }
             }
         }
 
-        // 3. Fallback: try direct fields
-        // Gumroad often flattens custom fields or custom URL params into the root body
+        // Gumroad often flattens custom fields or URL params into the root body.
         if (!sessionId) sessionId = body.session_id || body.select_session_id;
         if (!machineId) machineId = body.machine_id || body.select_machine_id;
 
-        // 4. Log for debugging
         const email = body.email;
         const isTest = body.test === 'true' || body.test === true;
 
@@ -96,9 +92,8 @@ serve(async (req: Request) => {
             if (machineId) {
                 console.log(`[gumroad-webhook] session_id missing, attempting machine_id recovery for: ${machineId}`);
             } else {
-                // Sale happened but no session_id — maybe direct Gumroad purchase
-                // Still valid, just can't auto-unlock desktop app
-                console.warn('[gumroad-webhook] No session_id or machine_id found. Direct purchase — manual activation needed.');
+                // Sale happened but no session_id. This can happen on direct Gumroad purchases.
+                console.warn('[gumroad-webhook] No session_id or machine_id found. Direct purchase - manual activation needed.');
                 return new Response(JSON.stringify({ success: true, note: 'No IDs, manual activation required' }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' },
@@ -106,11 +101,9 @@ serve(async (req: Request) => {
             }
         }
 
-        // Create Supabase client with service role key (bypasses RLS)
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-        // Update the checkout session → triggers Realtime to desktop app
-        // We match by session_id IF we have it, OR by machine_id (healing/recovery)
+        // Update the checkout session and trigger Realtime to the desktop app.
         let query = supabase
             .from('checkout_sessions')
             .update({
@@ -122,8 +115,7 @@ serve(async (req: Request) => {
         if (sessionId) {
             query = query.eq('session_id', sessionId);
         } else {
-            // Recovery: match by machine_id and ensure it's pending
-            // This heals the session if the session_id was stripped by Gumroad
+            // Recovery path if Gumroad stripped the session_id.
             query = query.eq('machine_id', machineId).eq('status', 'pending');
         }
 
@@ -139,7 +131,6 @@ serve(async (req: Request) => {
             return new Response('Session not found', { status: 404 });
         }
 
-        // Also mark the installation as paid
         const finalMachineId = data[0].machine_id;
         if (finalMachineId) {
             await supabase
@@ -148,12 +139,11 @@ serve(async (req: Request) => {
                 .eq('machine_id', finalMachineId);
         }
 
-        console.log(`[gumroad-webhook] ✅ Checkout completed for session ${data[0].session_id}`);
+        console.log(`[gumroad-webhook] Completed checkout for session ${data[0].session_id}`);
         return new Response(JSON.stringify({ success: true }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
         });
-
     } catch (err) {
         console.error('[gumroad-webhook] Unexpected error:', err);
         return new Response('Internal error', { status: 500 });
