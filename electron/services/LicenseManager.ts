@@ -340,7 +340,7 @@ export class LicenseManager {
      * Check license status via Supabase RPC
      */
     private async checkCloudLicense(): Promise<LicenseState> {
-        // Force version to 2.0.1 to avoid Electron-version reporting in dev
+        // Always report the packaged app version rather than the Electron runtime version
         const appVersion = app.getVersion();
         const osInfo = `${process.platform}-${process.arch}`;
 

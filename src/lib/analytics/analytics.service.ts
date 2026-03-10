@@ -47,7 +47,7 @@ interface SessionDurationPayload {
 // --- Configuration ---
 
 const GA4_MEASUREMENT_ID = "G-494RMJ2G6E";
-const APP_VERSION = "1.1.3";
+const APP_VERSION = "1.0.0";
 
 // Extend window to include gtag/dataLayer
 declare global {

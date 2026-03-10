@@ -846,7 +846,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                     </div>
                                     <div className="flex-1 overflow-hidden">
                                         <p className="text-xs font-bold text-text-primary truncate">Ghost Writer</p>
-                                        <p className="text-[10px] text-text-tertiary truncate">v2.0.0 Pro</p>
+                                        <p className="text-[10px] text-text-tertiary truncate">v1.0.0 Official</p>
                                     </div>
                                     <button onClick={onClose} className="text-text-tertiary hover:text-text-primary transition-colors">
                                         <LogOut size={16} className="rotate-180" />
@@ -1085,7 +1085,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                             <div>
                                                                 <h3 className="text-sm font-bold text-text-primary">Version</h3>
                                                                 <p className="text-xs text-text-secondary mt-0.5">
-                                                                    You are currently using Ghost Writer version 2.0.0.
+                                                                    You are currently using Ghost Writer version 1.0.0.
                                                                 </p>
                                                             </div>
                                                         </div>

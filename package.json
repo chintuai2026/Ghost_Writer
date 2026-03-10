@@ -1,6 +1,6 @@
 {
   "name": "ghost-writer",
-  "version": "2.1.0",
+  "version": "1.0.0",
   "main": "./dist-electron/main.js",
   "description": "Professional-grade, privacy-first AI assistant for high-stakes interviews and meetings featuring real-time local transcription and hardware-aware intelligence.",
   "scripts": {
@@ -73,6 +73,7 @@
           ]
         }
       ],
+      "artifactName": "Ghost.Writer.Setup.${version}.${ext}",
       "icon": "assets/icons/win/icon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
@@ -85,6 +86,7 @@
           ]
         }
       ],
+      "artifactName": "Ghost.Writer.${version}-${arch}.${ext}",
       "icon": "assets/icons/mac/icon.png",
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,

@@ -12,10 +12,6 @@ export class AIRuntimeManager {
     private runtimeDir: string;
     private isDownloading: boolean = false;
 
-    // The remote URL where the pre-packaged zip file containing the missing node_modules is hosted.
-    // The user should upload a zip file named "ai-runtime.zip" to their GitHub releases.
-    private readonly RUNTIME_ZIP_URL = "https://github.com/chintuai2026/Ghost_Writer/releases/download/v2.1.0/ai-runtime.zip";
-
     private constructor() {
         this.runtimeDir = path.join(app.getPath('userData'), 'ai-runtime');
     }
@@ -65,7 +61,7 @@ export class AIRuntimeManager {
             const zipPath = path.join(this.runtimeDir, 'ai-runtime.zip');
 
             // 1. Download the zip
-            await this.downloadFile(this.RUNTIME_ZIP_URL, zipPath, window);
+            await this.downloadFile(this.getRuntimeZipUrl(), zipPath, window);
 
             // 2. Extract the zip
             window.webContents.send('ai-download-progress', { status: 'Extracting AI modules...', percent: 100 });
@@ -91,6 +87,10 @@ export class AIRuntimeManager {
         } finally {
             this.isDownloading = false;
         }
+    }
+
+    private getRuntimeZipUrl(): string {
+        return `https://github.com/chintuai2026/Ghost_Writer/releases/download/v${app.getVersion()}/ai-runtime.zip`;
     }
 
     private downloadFile(url: string, dest: string, window: BrowserWindow): Promise<void> {
