@@ -57,6 +57,7 @@ normalizeUserDataPath();
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
+  console.error("[Main] Another Ghost Writer instance is already running. Exiting this instance.");
   app.quit();
 }
 

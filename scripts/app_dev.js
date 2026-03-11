@@ -113,58 +113,36 @@ function cleanupStaleWindowsDevProcesses() {
   const installedAppPath = path.join(process.env.LOCALAPPDATA || "", "Programs", "Ghost Writer", "Ghost Writer.exe")
     .replace(/'/g, "''");
 
-  const getPids = (command) => {
-    const output = execFileSync("powershell", ["-NoProfile", "-Command", command], {
+  try {
+    execFileSync("powershell", [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='SilentlyContinue'; " +
+      `$electronPath = '${electronPath}'; ` +
+      `$installedAppPath = '${installedAppPath}'; ` +
+      `$projectRoot = '${normalizedRoot}'; ` +
+      "Get-Process 'Ghost Writer' -ErrorAction SilentlyContinue | Stop-Process -Force; " +
+      "Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $electronPath } | Stop-Process -Force; " +
+      "Get-CimInstance Win32_Process | " +
+      "Where-Object { " +
+      "  ($_.Name -eq 'node.exe' -or $_.Name -eq 'cmd.exe') -and " +
+      "  $_.CommandLine -and " +
+      "  $_.CommandLine -like ('*' + $projectRoot + '*') -and " +
+      "  ( " +
+      "    $_.CommandLine -like '*scripts\\app_dev.js*' -or " +
+      "    $_.CommandLine -like '*scripts\\run_electron_dev.js*' -or " +
+      "    $_.CommandLine -like '*vite.js*' -or " +
+      "    $_.CommandLine -like '*dist-electron*main.js*' -or " +
+      "    $_.CommandLine -like '*npm run dev*' -or " +
+      "    $_.CommandLine -like '*npm run electron:dev*' " +
+      "  ) " +
+      "} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; " +
+      "Start-Sleep -Milliseconds 500"
+    ], {
       cwd: projectRoot,
-      encoding: "utf8",
+      stdio: "ignore",
       windowsHide: true,
     });
-
-    return output
-      .split(/\r?\n/)
-      .map((line) => Number(line.trim()))
-      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
-  };
-
-  try {
-    const electronPids = getPids(
-      `$electronPath = '${electronPath}'; ` +
-      `Get-Process electron -ErrorAction SilentlyContinue | ` +
-      `Where-Object { $_.Path -eq $electronPath } | ` +
-      `Select-Object -ExpandProperty Id`
-    );
-
-    const installedAppPids = installedAppPath
-      ? getPids(
-        `$installedAppPath = '${installedAppPath}'; ` +
-        `Get-Process 'Ghost Writer' -ErrorAction SilentlyContinue | ` +
-        `Where-Object { $_.Path -eq $installedAppPath } | ` +
-        `Select-Object -ExpandProperty Id`
-      )
-      : [];
-
-    const nodePids = getPids(
-      `$projectRoot = '${normalizedRoot}'; ` +
-      `$currentPid = ${process.pid}; ` +
-      `Get-CimInstance Win32_Process | ` +
-      `Where-Object { ` +
-      `  $_.ProcessId -ne $currentPid -and ` +
-      `  ($_.Name -eq 'node.exe' -or $_.Name -eq 'cmd.exe') -and ` +
-      `  $_.CommandLine -and ` +
-      `  $_.CommandLine -like ('*' + $projectRoot + '*') -and ` +
-      `  ( ` +
-      `    $_.CommandLine -like '*scripts\\app_dev.js*' -or ` +
-      `    $_.CommandLine -like '*vite.js*' -or ` +
-      `    $_.CommandLine -like '*dist-electron*main.js*' -or ` +
-      `    $_.CommandLine -like '*electron\\cli.js*' -or ` +
-      `    $_.CommandLine -like '*npm run dev*' -or ` +
-      `    $_.CommandLine -like '*npm run electron:dev*' -or ` +
-      `    $_.CommandLine -like '*concurrently*' ` +
-      `  ) ` +
-      `} | Select-Object -ExpandProperty ProcessId`
-    );
-
-    [...new Set([...electronPids, ...installedAppPids, ...nodePids])].forEach((pid) => killProcessTree(pid));
   } catch {
     // Best-effort dev cleanup only.
   }
