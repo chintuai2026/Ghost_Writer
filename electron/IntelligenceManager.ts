@@ -642,7 +642,11 @@ export class IntelligenceManager extends EventEmitter {
             }
 
             // Post-process: strip meta-commentary, filler, and enforce intent-adaptive length
-            fullAnswer = postProcessForInterview(fullAnswer, intentResult.intent);
+            fullAnswer = postProcessForInterview(
+                fullAnswer,
+                intentResult.intent,
+                temporalContext.previousResponses
+            );
 
             // Store in context (WhatToAnswerLLM never returns empty)
             this.addAssistantMessage(fullAnswer);

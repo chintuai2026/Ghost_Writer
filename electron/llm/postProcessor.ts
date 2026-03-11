@@ -38,6 +38,17 @@ const PREFIXES = [
     "Here is the refined answer:",
 ];
 
+const GENERIC_REPEATED_OPENINGS = [
+    /^yeah,?\s*so\s+basically,?\s*/i,
+    /^so,?\s+basically,?\s*/i,
+    /^so,\s*/i,
+    /^well,\s*/i,
+    /^in my experience,?\s*/i,
+    /^the way i think about it is\s*/i,
+    /^i'd approach this by\s*/i,
+    /^what i usually do is\s*/i,
+];
+
 /**
  * Clamp response to strict interview copilot constraints
  * @param text - Raw LLM response
@@ -160,6 +171,78 @@ function stripFillerPhrases(text: string): string {
     result = result.replace(/\s+\.$/, ".");
 
     return result.trim();
+}
+
+function normalizeForComparison(text: string): string {
+    return text
+        .toLowerCase()
+        .replace(/__SOURCES__:\s*\[[^\]]*\]/gi, "")
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function getFirstSentence(text: string): string {
+    const match = text.match(/^[^.!?]+[.!?]?/);
+    return match ? match[0].trim() : text.trim();
+}
+
+function stripRepeatedLeadIn(text: string, previousResponses: string[]): string {
+    if (!previousResponses.length) {
+        return text;
+    }
+
+    const normalizedHistory = previousResponses.map(normalizeForComparison);
+    let result = text;
+
+    for (const opening of GENERIC_REPEATED_OPENINGS) {
+        const match = result.match(opening);
+        if (!match) {
+            continue;
+        }
+
+        const normalizedOpening = normalizeForComparison(match[0]);
+        const openingWasUsedBefore = normalizedHistory.some((response) => response.startsWith(normalizedOpening));
+        if (openingWasUsedBefore) {
+            result = result.replace(opening, "");
+            break;
+        }
+    }
+
+    return result.trim();
+}
+
+function dropRepeatedOpeningSentence(text: string, previousResponses: string[]): string {
+    if (!previousResponses.length) {
+        return text;
+    }
+
+    const firstSentence = getFirstSentence(text);
+    const normalizedFirstSentence = normalizeForComparison(firstSentence);
+    if (!normalizedFirstSentence) {
+        return text;
+    }
+
+    const repeatedOpening = previousResponses.some((response) => {
+        const priorFirstSentence = getFirstSentence(response);
+        return normalizeForComparison(priorFirstSentence) === normalizedFirstSentence;
+    });
+
+    if (!repeatedOpening) {
+        return text;
+    }
+
+    const remaining = text.slice(firstSentence.length).trim();
+    return remaining || text;
+}
+
+function normalizeSentenceStart(text: string): string {
+    if (!text) {
+        return text;
+    }
+
+    const trimmed = text.trim();
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 /**
@@ -301,7 +384,8 @@ export function stripMetaCommentary(text: string): string {
  */
 export function postProcessForInterview(
     text: string,
-    intent?: string
+    intent?: string,
+    previousResponses: string[] = []
 ): string {
     if (!text || typeof text !== "string") return "";
 
@@ -311,6 +395,9 @@ export function postProcessForInterview(
     result = stripPrefixes(result);
     result = stripMetaCommentary(result);
     result = stripFillerPhrases(result);
+    result = stripRepeatedLeadIn(result, previousResponses);
+    result = dropRepeatedOpeningSentence(result, previousResponses);
+    result = normalizeSentenceStart(result);
 
     // Intent-adaptive limits
     let maxSentences: number;

@@ -1,7 +1,7 @@
 import { LLMHelper } from "../LLMHelper";
 import { CredentialsManager } from "../services/CredentialsManager";
 import { UNIVERSAL_WHAT_TO_ANSWER_PROMPT, UNIVERSAL_MEETING_ANSWER_PROMPT, injectUserContext } from "./prompts";
-import { TemporalContext } from "./TemporalContextBuilder";
+import { formatTemporalContextForPrompt, TemporalContext } from "./TemporalContextBuilder";
 import { IntentResult } from "./IntentClassifier";
 import { ContextDocumentManager } from "../services/ContextDocumentManager";
 import { CostTracker } from "../utils/costTracker";
@@ -50,6 +50,10 @@ ANSWER SHAPE: ${intentResult.answerShape}
             if (temporalContext && temporalContext.hasRecentResponses) {
                 const history = temporalContext.previousResponses.map((r, i) => `${i + 1}. "${r}"`).join('\n');
                 contextParts.push(`PREVIOUS RESPONSES (Avoid Repetition):\n${history}`);
+                contextParts.push(`<conversation_continuity>
+The interviewer already heard your earlier answer. Build on it with new information, sharper specifics, or a different angle.
+Do not restart from the same introduction, and do not restate the full previous answer unless the interviewer explicitly asks you to repeat it.
+</conversation_continuity>`);
             }
 
             const extraContext = contextParts.join('\n\n');
@@ -76,7 +80,10 @@ ANSWER SHAPE: ${intentResult.answerShape}
             }
 
             // Inject into prompt
-            const prompt = injectUserContext(basePrompt, resumeText, jdText, projectKnowledge, agendaText, isMeeting ? 'meeting' : 'interview');
+            const prompt = this.injectTemporalContext(
+                injectUserContext(basePrompt, resumeText, jdText, projectKnowledge, agendaText, isMeeting ? 'meeting' : 'interview'),
+                temporalContext
+            );
 
             // Use Universal Prompt
             // Note: WhatToAnswer has a very specific prompt. 
@@ -157,5 +164,18 @@ ANSWER SHAPE: ${intentResult.answerShape}
 
         const fullQuestion = questionParts.join(' ');
         return fullQuestion.length > 5 ? fullQuestion : null;
+    }
+
+    private injectTemporalContext(prompt: string, temporalContext?: TemporalContext): string {
+        const temporalPrompt = temporalContext ? formatTemporalContextForPrompt(temporalContext) : "";
+        if (!temporalPrompt) {
+            return prompt.replace("{TEMPORAL_CONTEXT}", "").trim();
+        }
+
+        if (prompt.includes("{TEMPORAL_CONTEXT}")) {
+            return prompt.replace("{TEMPORAL_CONTEXT}", temporalPrompt);
+        }
+
+        return `${prompt}\n\n${temporalPrompt}`.trim();
     }
 }
