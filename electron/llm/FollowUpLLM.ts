@@ -10,13 +10,14 @@ export class FollowUpLLM {
         this.llmHelper = llmHelper;
     }
 
-    async generate(previousAnswer: string, refinementRequest: string, context?: string): Promise<string> {
+    async generate(previousAnswer: string, refinementRequest: string, context?: string, imagePath?: string): Promise<string> {
         try {
             const prompt = await this.getEnrichedPrompt();
             const message = `PREVIOUS ANSWER:\n${previousAnswer}\n\nREQUEST: ${refinementRequest}`;
             const stream = this.llmHelper.streamChat({
                 message: message,
-                context: context,
+                context: this.buildVisualContext(context, imagePath),
+                imagePath,
                 systemPrompt: prompt
             });
             let full = "";
@@ -28,13 +29,14 @@ export class FollowUpLLM {
         }
     }
 
-    async *generateStream(previousAnswer: string, refinementRequest: string, context?: string): AsyncGenerator<string> {
+    async *generateStream(previousAnswer: string, refinementRequest: string, context?: string, imagePath?: string): AsyncGenerator<string> {
         try {
             const prompt = await this.getEnrichedPrompt();
             const message = `PREVIOUS ANSWER:\n${previousAnswer}\n\nREQUEST: ${refinementRequest}`;
             yield* this.llmHelper.streamChat({
                 message: message,
-                context: context,
+                context: this.buildVisualContext(context, imagePath),
+                imagePath,
                 systemPrompt: prompt
             });
         } catch (e) {
@@ -60,5 +62,14 @@ export class FollowUpLLM {
             agendaText,
             isMeeting ? 'meeting' : 'interview'
         );
+    }
+
+    private buildVisualContext(context?: string, imagePath?: string): string | undefined {
+        if (!imagePath) {
+            return context;
+        }
+
+        const note = "An attached screenshot is part of this refinement request. Use the screenshot as visual context if it is relevant.";
+        return context ? `${context}\n\n${note}` : note;
     }
 }

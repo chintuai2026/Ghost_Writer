@@ -10,11 +10,13 @@ export class FollowUpQuestionsLLM {
         this.llmHelper = llmHelper;
     }
 
-    async generate(context: string): Promise<string> {
+    async generate(context: string, imagePath?: string): Promise<string> {
         try {
             const prompt = await this.getEnrichedPrompt();
             const stream = this.llmHelper.streamChat({
                 message: context,
+                context: this.buildVisualContext(imagePath),
+                imagePath,
                 systemPrompt: prompt
             });
             let full = "";
@@ -26,11 +28,13 @@ export class FollowUpQuestionsLLM {
         }
     }
 
-    async *generateStream(context: string): AsyncGenerator<string> {
+    async *generateStream(context: string, imagePath?: string): AsyncGenerator<string> {
         try {
             const prompt = await this.getEnrichedPrompt();
             yield* this.llmHelper.streamChat({
                 message: context,
+                context: this.buildVisualContext(imagePath),
+                imagePath,
                 systemPrompt: prompt
             });
         } catch (e) {
@@ -56,5 +60,13 @@ export class FollowUpQuestionsLLM {
             agendaText,
             isMeeting ? 'meeting' : 'interview'
         );
+    }
+
+    private buildVisualContext(imagePath?: string): string | undefined {
+        if (!imagePath) {
+            return undefined;
+        }
+
+        return "An attached screenshot is part of this request. Use the screenshot as visual context when generating follow-up questions if it is relevant.";
     }
 }

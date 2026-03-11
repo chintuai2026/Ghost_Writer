@@ -88,6 +88,26 @@ const SourceBadges: React.FC<{ sources?: string[] }> = ({ sources }) => {
     );
 };
 
+const extractResponseSources = (text: string): { text: string; sources: string[] } => {
+    const sourceMatch = text.match(/__SOURCES__:\s*\[([^\]]*)\]/i);
+    if (!sourceMatch) {
+        return { text, sources: [] };
+    }
+
+    const sources = sourceMatch[1]
+        .split(',')
+        .map(source => source.trim())
+        .filter(Boolean)
+        .filter((source, index, items) => items.indexOf(source) === index);
+
+    const cleanedText = text
+        .replace(sourceMatch[0], '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+    return { text: cleanedText, sources };
+};
+
 interface Message {
     id: string;
     role: 'user' | 'system' | 'interviewer';
@@ -498,6 +518,7 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
             setIsProcessing(false);
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
+                const parsed = extractResponseSources(data.answer);
 
                 // If we were streaming, finalize it
                 if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'what_to_answer') {
@@ -505,7 +526,8 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
                     const updated = [...prev];
                     updated[prev.length - 1] = {
                         ...lastMsg,
-                        text: data.answer, // Ensure final consistency
+                        text: parsed.text,
+                        sources: parsed.sources,
                         isStreaming: false
                     };
                     return updated;
@@ -515,7 +537,8 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
                 return [...prev, {
                     id: Date.now().toString(),
                     role: 'system',
-                    text: data.answer,  // Plain text, no markdown - ready to speak
+                    text: parsed.text,
+                    sources: parsed.sources,
                     intent: 'what_to_answer'
                 }];
             });
@@ -548,11 +571,13 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
             setIsProcessing(false);
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
+                const parsed = extractResponseSources(data.answer);
                 if (lastMsg && lastMsg.isStreaming && lastMsg.intent === data.intent) {
                     const updated = [...prev];
                     updated[prev.length - 1] = {
                         ...lastMsg,
-                        text: data.answer,
+                        text: parsed.text,
+                        sources: parsed.sources,
                         isStreaming: false
                     };
                     return updated;
@@ -560,7 +585,8 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
                 return [...prev, {
                     id: Date.now().toString(),
                     role: 'system',
-                    text: data.answer,
+                    text: parsed.text,
+                    sources: parsed.sources,
                     intent: data.intent
                 }];
             });
@@ -648,11 +674,13 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
             setIsProcessing(false);
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
+                const parsed = extractResponseSources(data.questions);
                 if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'follow_up_questions') {
                     const updated = [...prev];
                     updated[prev.length - 1] = {
                         ...lastMsg,
-                        text: data.questions,
+                        text: parsed.text,
+                        sources: parsed.sources,
                         isStreaming: false
                     };
                     return updated;
@@ -660,7 +688,8 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
                 return [...prev, {
                     id: Date.now().toString(),
                     role: 'system',
-                    text: data.questions,
+                    text: parsed.text,
+                    sources: parsed.sources,
                     intent: 'follow_up_questions'
                 }];
             });
@@ -734,11 +763,9 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
         setIsProcessing(true);
         analytics.trackCommandExecuted('what_to_say');
 
-        // Capture and clear attached image context
+        // Use attached image context if present
         const currentAttachment = attachedContext;
         if (currentAttachment) {
-            setAttachedContext(null);
-            // Show the attached image in chat
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
                 role: 'user',
@@ -768,7 +795,7 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
         analytics.trackCommandExecuted('follow_up_' + intent);
 
         try {
-            await window.electronAPI.generateFollowUp(intent);
+            await window.electronAPI.generateFollowUp(intent, undefined, attachedContext?.path);
         } catch (err) {
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
@@ -804,7 +831,7 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
         analytics.trackCommandExecuted('suggest_questions');
 
         try {
-            await window.electronAPI.generateFollowUpQuestions();
+            await window.electronAPI.generateFollowUpQuestions(attachedContext?.path);
         } catch (err) {
             setMessages(prev => [...prev, {
                 id: Date.now().toString(),
@@ -930,7 +957,6 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
             setManualTranscript('');  // Clear live preview
 
             const currentAttachment = attachedContext;
-            setAttachedContext(null); // Clear context immediately on send
 
             const question = voiceInputRef.current.trim();
             setVoiceInput('');
@@ -1040,9 +1066,8 @@ Provide only the answer, nothing else.`;
         const userText = inputValue;
         const currentAttachment = attachedContext;
 
-        // Clear inputs immediately
+        // Clear text input immediately, but preserve attached screenshot for threaded follow-up questions
         setInputValue('');
-        setAttachedContext(null);
 
         setMessages(prev => [...prev, {
             id: Date.now().toString(),

@@ -677,7 +677,7 @@ export class IntelligenceManager extends EventEmitter {
      * MODE 3: Follow-Up (Refinement)
      * Modify the last assistant message
      */
-    async runFollowUp(intent: string, userRequest?: string): Promise<string | null> {
+    async runFollowUp(intent: string, userRequest?: string, imagePath?: string): Promise<string | null> {
         console.log(`[IntelligenceManager] runFollowUp called with intent: ${intent}`);
         if (!this.lastAssistantMessage) {
             console.warn('[IntelligenceManager] No lastAssistantMessage found for follow-up');
@@ -695,12 +695,14 @@ export class IntelligenceManager extends EventEmitter {
 
             const context = this.getFormattedContext(60);
             const refinementRequest = userRequest || intent;
+            const targetImagePath = imagePath || this.currentScreenshots[this.currentScreenshots.length - 1];
 
             let fullRefined = "";
             const stream = this.followUpLLM.generateStream(
                 this.lastAssistantMessage,
                 refinementRequest,
-                context
+                context,
+                targetImagePath
             );
 
             for await (const token of stream) {
@@ -809,7 +811,7 @@ export class IntelligenceManager extends EventEmitter {
      * MODE 6: Follow-Up Questions
      * Suggest strategic questions for the user to ask
      */
-    async runFollowUpQuestions(): Promise<string | null> {
+    async runFollowUpQuestions(imagePath?: string): Promise<string | null> {
         console.log('[IntelligenceManager] runFollowUpQuestions called');
         this.setMode('follow_up_questions');
 
@@ -826,9 +828,10 @@ export class IntelligenceManager extends EventEmitter {
                 this.setMode('idle');
                 return null;
             }
+            const targetImagePath = imagePath || this.currentScreenshots[this.currentScreenshots.length - 1];
 
             let fullQuestions = "";
-            const stream = this.followUpQuestionsLLM.generateStream(context);
+            const stream = this.followUpQuestionsLLM.generateStream(context, targetImagePath);
 
             for await (const token of stream) {
                 this.emit('follow_up_questions_token', token);

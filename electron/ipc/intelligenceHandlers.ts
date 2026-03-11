@@ -34,10 +34,10 @@ export function registerIntelligenceHandlers(appState: AppState): void {
   });
 
   // MODE 3: Follow-Up (Refinement)
-  ipcMain.handle("generate-follow-up", async (_, intent: string, userRequest?: string) => {
+  ipcMain.handle("generate-follow-up", async (_, intent: string, userRequest?: string, imagePath?: string) => {
     return rateLimiter.wrap('generate-follow-up', async () => {
       const intelligenceManager = appState.getIntelligenceManager();
-      const refined = await intelligenceManager.runFollowUp(intent, userRequest);
+      const refined = await intelligenceManager.runFollowUp(intent, userRequest, imagePath);
       return { refined, intent };
     });
   });
@@ -52,10 +52,10 @@ export function registerIntelligenceHandlers(appState: AppState): void {
   });
 
   // MODE 6: Follow-Up Questions
-  ipcMain.handle("generate-follow-up-questions", async () => {
+  ipcMain.handle("generate-follow-up-questions", async (_, imagePath?: string) => {
     return rateLimiter.wrap('generate-follow-up-questions', async () => {
       const intelligenceManager = appState.getIntelligenceManager();
-      const questions = await intelligenceManager.runFollowUpQuestions();
+      const questions = await intelligenceManager.runFollowUpQuestions(imagePath);
       return { questions };
     });
   });

@@ -342,9 +342,14 @@ export class LLMHelper extends EventEmitter {
       ...overrides,
     };
 
-    merged.systemPrompt = payload.options?.skipSystemPrompt
+    const resolvedSystemPrompt = payload.options?.skipSystemPrompt
       ? undefined
       : (overrides.systemPrompt ?? payload.systemPrompt ?? defaultSystemPrompt);
+
+    merged.systemPrompt = this.appendAttachmentSourceRule(
+      resolvedSystemPrompt,
+      merged.imagePath
+    );
 
     return merged;
   }
@@ -370,6 +375,18 @@ export class LLMHelper extends EventEmitter {
     }
 
     return `${message}\n\nSCREENSHOT OCR:\n${normalizedOCR}`;
+  }
+
+  private appendAttachmentSourceRule(systemPrompt: string | undefined, imagePath?: string): string | undefined {
+    if (!imagePath) {
+      return systemPrompt;
+    }
+
+    const screenshotRule = systemPrompt && systemPrompt.includes("__SOURCES__:")
+      ? `\n\n<screenshot_source_rule>\nIf you use the attached screenshot, include Screenshot in the same final __SOURCES__ list. Example: __SOURCES__: [Screenshot] or __SOURCES__: [Screenshot, Resume].\n</screenshot_source_rule>`
+      : `\n\n<screenshot_source_rule>\nIf you use the attached screenshot to answer, append exactly one line at the very end: __SOURCES__: [Screenshot]. If other grounded sources were also used, include Screenshot in the same list.\n</screenshot_source_rule>`;
+
+    return `${systemPrompt ?? ""}${screenshotRule}`.trim();
   }
 
   private async preparePayload(payload: ChatPayload): Promise<PreparedChatPayload> {

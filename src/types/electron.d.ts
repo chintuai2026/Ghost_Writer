@@ -96,8 +96,8 @@ export interface ElectronAPI {
   // Intelligence Mode IPC
   generateAssist: () => Promise<{ insight: string | null }>
   generateWhatToSay: (question?: string, imagePath?: string) => Promise<{ answer: string | null; question?: string; error?: string }>
-  generateFollowUp: (intent: string, userRequest?: string) => Promise<{ refined: string | null; intent: string }>
-  generateFollowUpQuestions: () => Promise<{ questions: string | null }>
+  generateFollowUp: (intent: string, userRequest?: string, imagePath?: string) => Promise<{ refined: string | null; intent: string }>
+  generateFollowUpQuestions: (imagePath?: string) => Promise<{ questions: string | null }>
   generateRecap: () => Promise<{ summary: string | null }>
   submitManualQuestion: (question: string) => Promise<{ answer: string | null; question: string }>
   getIntelligenceContext: () => Promise<{ context: string; lastAssistantMessage: string | null; activeMode: string }>
