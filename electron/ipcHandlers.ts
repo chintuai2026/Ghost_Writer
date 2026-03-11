@@ -7,7 +7,12 @@ import { DatabaseManager } from "./db/DatabaseManager"
 import { rateLimiter } from "./utils/rateLimiter"
 
 import { ENGLISH_VARIANTS } from "./config/languages"
-import { GEMINI_PRO_MODEL, GEMINI_FLASH_MODEL } from "./llm/prompts"
+import {
+  GEMINI_PRO_MODEL,
+  GEMINI_FLASH_MODEL,
+  UNIVERSAL_ANSWER_PROMPT,
+  injectUserContext
+} from "./llm/prompts"
 
 // Sub-handler modules
 import { registerCredentialHandlers } from "./ipc/credentialHandlers"
@@ -21,6 +26,22 @@ import { registerLicenseHandlers } from "./ipc/licenseHandlers"
 let ipcHandlersInitialized = false;
 
 import { setupSystemHandlers } from './ipc/systemHandlers';
+
+function buildGroundedChatSystemPrompt(appState: AppState): string {
+  const isMeetingMode = appState.credentialsManager.getIsMeetingMode();
+  const basePrompt = isMeetingMode
+    ? (appState.credentialsManager.getMeetingPrompt() || UNIVERSAL_ANSWER_PROMPT)
+    : (appState.credentialsManager.getInterviewPrompt() || UNIVERSAL_ANSWER_PROMPT);
+
+  return injectUserContext(
+    basePrompt,
+    appState.contextManager.getResumeText(),
+    appState.contextManager.getJDText(),
+    appState.contextManager.getProjectKnowledgeText(),
+    appState.contextManager.getAgendaText(),
+    isMeetingMode ? "meeting" : "interview"
+  );
+}
 
 export function initializeIpcHandlers(appState: AppState): void {
   setupSystemHandlers();
@@ -308,10 +329,15 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeIpcHandle("gemini-chat", async (event, message: string, imagePath?: string, context?: string, options?: { skipSystemPrompt?: boolean }) => {
     try {
+      const systemPrompt = options?.skipSystemPrompt
+        ? undefined
+        : buildGroundedChatSystemPrompt(appState);
+
       const result = await appState.processingHelper.getLLMHelper().chatWithGemini({
         message,
         imagePath,
         context,
+        systemPrompt,
         options: { skipSystemPrompt: options?.skipSystemPrompt }
       });
 
@@ -356,6 +382,9 @@ export function initializeIpcHandlers(appState: AppState): void {
     try {
       console.log("[IPC] gemini-chat-stream started using LLMHelper.streamChat");
       const llmHelper = appState.processingHelper.getLLMHelper();
+      const systemPrompt = options?.skipSystemPrompt
+        ? undefined
+        : buildGroundedChatSystemPrompt(appState);
 
       // Update IntelligenceManager with USER message immediately
       const intelligenceManager = appState.getIntelligenceManager();
@@ -389,6 +418,7 @@ export function initializeIpcHandlers(appState: AppState): void {
           message,
           imagePath,
           context,
+          systemPrompt,
           options: { skipSystemPrompt: options?.skipSystemPrompt }
         });
 
