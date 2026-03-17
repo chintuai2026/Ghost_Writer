@@ -10,6 +10,7 @@ import icon from "./icon.ico";
 import { AboutSection } from './AboutSection';
 import { AIProvidersSettings } from './settings/AIProvidersSettings';
 import { AIModelsSettings } from './settings/AIModelsSettings';
+import { GeneralSettings } from './settings/GeneralSettings';
 import { SessionSettings } from './settings/SessionSettings';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WebAudioFallback } from '../lib/audio/WebAudioFallback';
@@ -1145,6 +1146,8 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                             </div>
 
                                         </div>
+
+                                        <GeneralSettings embedded hideGoogleServiceAccount />
 
                                         {/* Process Disguise */}
                                         {/* Process Disguise */}

@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, RotateCcw, Sparkles } from 'lucide-react';
 
-interface GeneralSettingsProps { }
+interface GeneralSettingsProps {
+    embedded?: boolean;
+    hideGoogleServiceAccount?: boolean;
+}
 interface FullPrivacyStatus {
     enabled: boolean;
     localWhisperReady: boolean;
@@ -24,7 +27,10 @@ const DEFAULT_FULL_PRIVACY_STATUS: FullPrivacyStatus = {
     errors: [],
 };
 
-export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
+export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
+    embedded = false,
+    hideGoogleServiceAccount = false,
+}) => {
     // Recognition Language
     const [recognitionLanguage, setRecognitionLanguage] = useState('');
     const [availableLanguages, setAvailableLanguages] = useState<Record<string, any>>({});
@@ -199,28 +205,33 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
     };
 
     return (
-        <div className="space-y-8 animated fadeIn">
+        <div className={`space-y-8 ${embedded ? '' : 'animated fadeIn'}`}>
             <div>
-                <h3 className="text-lg font-bold text-text-primary mb-2">General Configuration</h3>
-                <p className="text-xs text-text-secondary mb-4">Core settings for Ghost Writer.</p>
+                {!embedded && (
+                    <>
+                        <h3 className="text-lg font-bold text-text-primary mb-2">General Configuration</h3>
+                        <p className="text-xs text-text-secondary mb-4">Core settings for Ghost Writer.</p>
+                    </>
+                )}
 
                 <div className="space-y-4">
-                    {/* Google Cloud Service Account */}
-                    <div className="bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle">
-                        <label className="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Google Speech-to-Text Key (JSON)</label>
-                        <div className="flex gap-3">
-                            <div className="flex-1 bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-secondary truncate flex items-center">
-                                {serviceAccountPath || "No file selected"}
+                    {!hideGoogleServiceAccount && (
+                        <div className="bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle">
+                            <label className="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Google Speech-to-Text Key (JSON)</label>
+                            <div className="flex gap-3">
+                                <div className="flex-1 bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-secondary truncate flex items-center">
+                                    {serviceAccountPath || "No file selected"}
+                                </div>
+                                <button
+                                    onClick={handleSelectServiceAccount}
+                                    className="bg-bg-input hover:bg-bg-secondary border border-border-subtle text-text-primary px-5 py-2.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
+                                >
+                                    Select File
+                                </button>
                             </div>
-                            <button
-                                onClick={handleSelectServiceAccount}
-                                className="bg-bg-input hover:bg-bg-secondary border border-border-subtle text-text-primary px-5 py-2.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
-                            >
-                                Select File
-                            </button>
+                            <p className="text-xs text-text-tertiary mt-2">Required for accurate speech recognition.</p>
                         </div>
-                        <p className="text-xs text-text-tertiary mt-2">Required for accurate speech recognition.</p>
-                    </div>
+                    )}
 
                     {/* Recognition Language */}
                     <div className="bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle">
