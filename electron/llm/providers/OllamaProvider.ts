@@ -28,7 +28,7 @@ const OLLAMA_VISION_MODEL_HINTS = [
     'vision'
 ];
 
-function isLikelyVisionModel(modelName: string): boolean {
+export function isLikelyVisionModelName(modelName: string): boolean {
     const lower = modelName.toLowerCase();
     return OLLAMA_VISION_MODEL_HINTS.some(hint => lower.includes(hint));
 }
@@ -210,7 +210,7 @@ export class OllamaProvider implements ILLMProvider {
 
         if (imagePath) {
             const currentLower = modelId.toLowerCase();
-            const isVision = isLikelyVisionModel(currentLower);
+            const isVision = isLikelyVisionModelName(currentLower);
 
             if (!isVision) {
                 const available = await this.getModels();
@@ -225,11 +225,15 @@ export class OllamaProvider implements ILLMProvider {
                 });
 
                 const visionModel = sortedAvailable.find(m => {
-                    return isLikelyVisionModel(m);
+                    return isLikelyVisionModelName(m);
                 });
                 if (visionModel) {
                     console.log(`[OllamaProvider] Auto-switching to vision model: ${visionModel}`);
                     modelId = visionModel;
+                } else {
+                    const error = "Screenshot analysis requires a vision-capable local Ollama model. Install one with `ollama pull llava:7b` or `ollama pull qwen2.5-vl:7b`.";
+                    console.warn(`[OllamaProvider] ${error}`);
+                    throw new Error(error);
                 }
             }
 
@@ -315,7 +319,7 @@ export class OllamaProvider implements ILLMProvider {
 
             if (imagePath) {
                 const currentLower = this.ollamaModel.toLowerCase();
-                const isAlreadyVision = isLikelyVisionModel(currentLower);
+                const isAlreadyVision = isLikelyVisionModelName(currentLower);
 
                 if (!isAlreadyVision) {
                     const available = await this.getModels();
@@ -330,7 +334,7 @@ export class OllamaProvider implements ILLMProvider {
                     });
 
                     const visionModel = sortedAvailable.find(m => {
-                        return isLikelyVisionModel(m);
+                        return isLikelyVisionModelName(m);
                     });
 
                     if (visionModel) {
@@ -338,7 +342,7 @@ export class OllamaProvider implements ILLMProvider {
                         modelToUse = visionModel;
                     } else {
                         console.warn(`[OllamaProvider] No vision model found in Ollama.`);
-                        yield "⚠️ I cannot analyze this screenshot because you don't have a Vision Model installed in Ollama. Please open your terminal and run `ollama run llava:7b` or `ollama run qwen2.5-vl:7b` to enable screenshot analysis in Local Mode.";
+                        yield "Full Privacy Mode requires a vision-capable local Ollama model for screenshot analysis. Run `ollama pull llava:7b` or `ollama pull qwen2.5-vl:7b`.";
                         return;
                     }
                 } else {
@@ -419,7 +423,7 @@ export class OllamaProvider implements ILLMProvider {
             }
         } catch (error: any) {
             if (error.name === 'AbortError') {
-                yield "\n\n⏱️ Response timed out. Try a shorter question or a smaller model.";
+                yield "\n\nResponse timed out. Try a shorter question or a smaller model.";
             } else {
                 console.error("[OllamaProvider] Stream error:", error);
                 yield `\n\nError: ${error.message}`;
@@ -528,7 +532,7 @@ export class OllamaProvider implements ILLMProvider {
         try {
             let modelToUse = this.ollamaModel;
             const currentLower = this.ollamaModel.toLowerCase();
-            const isVisionModel = isLikelyVisionModel(currentLower);
+            const isVisionModel = isLikelyVisionModelName(currentLower);
 
             if (isVisionModel) {
                 console.log(`[OllamaProvider] Selected model ${this.ollamaModel} is Vision-heavy. Searching for faster text-only summary model...`);

@@ -199,7 +199,8 @@ export interface ElectronAPI {
   setSttProvider: (provider: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper') => Promise<{ success: boolean; error?: string }>
   getSttProvider: () => Promise<string>
   getAirGapMode: () => Promise<boolean>
-  setAirGapMode: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
+  setAirGapMode: (enabled: boolean) => Promise<{ success: boolean; error?: string; status?: { enabled: boolean; localWhisperReady: boolean; localWhisperModelReady: boolean; ollamaReachable: boolean; localTextModelReady: boolean; localVisionModelReady: boolean; activeOllamaModel: string; errors: string[] } }>
+  getFullPrivacyStatus: () => Promise<{ enabled: boolean; localWhisperReady: boolean; localWhisperModelReady: boolean; ollamaReachable: boolean; localTextModelReady: boolean; localVisionModelReady: boolean; activeOllamaModel: string; errors: string[] }>
 
 
   // Customizable Prompts

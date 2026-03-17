@@ -20,6 +20,7 @@ import { CustomProvider } from "./types/customProviders";
 import { GPUHelper, GPUInfo } from "./utils/GPUHelper";
 import { CostTracker } from "./utils/costTracker";
 import { MultimodalHelper } from "./utils/MultimodalHelper";
+import { buildFullPrivacyBlockingMessage, getFullPrivacyStatus } from "./utils/fullPrivacyMode";
 
 import {
   UNIVERSAL_SYSTEM_PROMPT,
@@ -193,16 +194,16 @@ export class LLMHelper extends EventEmitter {
     this.airGapMode = enabled;
     if (enabled && !this.useOllama) {
       this.useOllama = true;
-      console.log("[LLMHelper] Air-Gap enabled: Switched to Ollama automatically");
+      console.log("[LLMHelper] Full Privacy Mode enabled: Switched to Ollama automatically");
     }
   }
 
   public setModel(modelId: string, customProviders: CustomProvider[] = []): void {
     const isLocalOllama = modelId.startsWith("ollama:") || modelId.startsWith("ollama-");
 
-    // Strict Air-Gap Enforcement
+    // Strict Full Privacy Mode enforcement
     if (this.airGapMode && !isLocalOllama) {
-      console.warn(`[LLMHelper] Blocked non-Ollama model switch due to Air-Gap Mode: ${modelId}`);
+      console.warn(`[LLMHelper] Blocked non-Ollama model switch due to Full Privacy Mode: ${modelId}`);
       this.useOllama = true;
       return;
     }
@@ -449,6 +450,22 @@ export class LLMHelper extends EventEmitter {
 
     const multimodal = MultimodalHelper.getInstance();
     await Promise.all(cleanupPaths.map((filePath) => multimodal.cleanupFile(filePath)));
+  }
+
+  private async getFullPrivacyBlockingMessage(imagePath?: string): Promise<string | null> {
+    if (!this.airGapMode) {
+      return null;
+    }
+
+    const status = await getFullPrivacyStatus();
+    if (status.activeOllamaModel) {
+      this.ollamaModel = status.activeOllamaModel;
+    }
+    this.useOllama = true;
+
+    return buildFullPrivacyBlockingMessage(status, {
+      requiresVision: !!imagePath,
+    });
   }
 
   // ─── OLLAMA PROVIDER DELEGATIONS ──────────────────────────────────
@@ -879,6 +896,12 @@ export class LLMHelper extends EventEmitter {
   public async chatWithGemini(payload: ChatPayload): Promise<string> {
     const { payload: preparedPayload, cleanupPaths } = await this.preparePayload(payload);
     const isMultimodal = !!preparedPayload.imagePath;
+    const fullPrivacyError = await this.getFullPrivacyBlockingMessage(preparedPayload.imagePath);
+
+    if (fullPrivacyError) {
+      await this.cleanupPreparedPayload(cleanupPaths);
+      return fullPrivacyError;
+    }
 
     const geminiPayload = this.buildProviderPayload(preparedPayload, HARD_SYSTEM_PROMPT);
     const groqPayload = this.buildProviderPayload(preparedPayload, GROQ_SYSTEM_PROMPT, {
@@ -1109,9 +1132,10 @@ export class LLMHelper extends EventEmitter {
 
   public async * streamChat(payload: ChatPayload): AsyncGenerator<string, void, unknown> {
     // ─── AIR-GAP PROTECTION ─────────────────────────────────────────
-    if (this.airGapMode && !this.useOllama) {
-      console.error("[LLMHelper] Air-Gap Mode Block: Attempted cloud chat while air-gap is ON");
-      yield "Error: Air-Gap Mode is active. Cloud providers are disabled. Please switch to Ollama or a local provider.";
+    const fullPrivacyError = await this.getFullPrivacyBlockingMessage(payload.imagePath);
+    if (fullPrivacyError) {
+      console.error("[LLMHelper] Full Privacy Mode block:", fullPrivacyError);
+      yield fullPrivacyError;
       return;
     }
 
@@ -1227,8 +1251,9 @@ export class LLMHelper extends EventEmitter {
 
   public async chat(payload: ChatPayload): Promise<string> {
     // ─── AIR-GAP PROTECTION ─────────────────────────────────────────
-    if (this.airGapMode && !this.useOllama) {
-      return "Error: Air-Gap Mode is active. Cloud providers are disabled.";
+    const fullPrivacyError = await this.getFullPrivacyBlockingMessage(payload.imagePath);
+    if (fullPrivacyError) {
+      return fullPrivacyError;
     }
 
     let fullResponse = "";

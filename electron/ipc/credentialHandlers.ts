@@ -3,6 +3,7 @@
 
 import { ipcMain, dialog } from "electron";
 import type { AppState } from "../main";
+import { getFullPrivacyStatus } from "../utils/fullPrivacyMode";
 
 let credentialHandlersInitialized = false;
 
@@ -36,6 +37,50 @@ function makeApiKeySetter(
       return { success: false, error: error.message };
     }
   });
+}
+
+function mapCurrentModelToSelectionId(appState: AppState): string | undefined {
+  const { CredentialsManager } = require('../services/CredentialsManager');
+  const { GEMINI_PRO_MODEL } = require('../llm/prompts');
+  const creds = CredentialsManager.getInstance();
+  const storedPreference = creds.getModelPreference();
+  if (storedPreference) {
+    return storedPreference;
+  }
+
+  const llmHelper = appState.processingHelper.getLLMHelper();
+  const provider = llmHelper.getCurrentProvider();
+  const model = llmHelper.getCurrentModel();
+
+  if (!model) {
+    return undefined;
+  }
+
+  if (llmHelper.isUsingOllama()) {
+    return `ollama-${model}`;
+  }
+
+  if (provider === 'custom') {
+    const customProvider = creds.getCustomProviders().find((entry: any) => entry.name === model || entry.id === model);
+    return customProvider?.id;
+  }
+
+  switch (provider) {
+    case 'gemini':
+      return model === GEMINI_PRO_MODEL ? 'gemini-pro' : 'gemini';
+    case 'openai':
+      return 'gpt-4o';
+    case 'claude':
+      return 'claude';
+    case 'groq':
+      return 'llama';
+    case 'nvidia':
+      return 'nvidia';
+    case 'deepseek':
+      return 'deepseek';
+    default:
+      return undefined;
+  }
 }
 
 export function registerCredentialHandlers(appState: AppState): void {
@@ -89,9 +134,10 @@ export function registerCredentialHandlers(appState: AppState): void {
       await llmHelper.switchToOllama(model, url);
       appState.getIntelligenceManager().initializeLLMs();
 
-      if (model) {
-        const { CredentialsManager } = require('../services/CredentialsManager');
-        CredentialsManager.getInstance().setOllamaModel(model);
+      const { CredentialsManager } = require('../services/CredentialsManager');
+      const resolvedModel = llmHelper.getCurrentModel();
+      if (resolvedModel) {
+        CredentialsManager.getInstance().setOllamaModel(resolvedModel);
       }
 
       return { success: true };
@@ -112,12 +158,16 @@ export function registerCredentialHandlers(appState: AppState): void {
 
   ipcMain.handle("switch-to-gemini", async (_, apiKey?: string, modelId?: string) => {
     try {
+      const { CredentialsManager } = require('../services/CredentialsManager');
+      if (CredentialsManager.getInstance().getAirGapMode()) {
+        return { success: false, error: "Full Privacy Mode is enabled. Disable it before switching to a cloud model." };
+      }
+
       const llmHelper = appState.processingHelper.getLLMHelper();
       await llmHelper.switchToGemini(apiKey, modelId);
       appState.getIntelligenceManager().initializeLLMs();
 
       if (apiKey) {
-        const { CredentialsManager } = require('../services/CredentialsManager');
         CredentialsManager.getInstance().setGeminiApiKey(apiKey);
       }
 
@@ -188,6 +238,10 @@ export function registerCredentialHandlers(appState: AppState): void {
   ipcMain.handle("switch-to-custom-provider", async (_, providerId: string) => {
     try {
       const { CredentialsManager } = require('../services/CredentialsManager');
+      if (CredentialsManager.getInstance().getAirGapMode()) {
+        return { success: false, error: "Full Privacy Mode is enabled. Disable it before switching to a custom provider." };
+      }
+
       const provider = CredentialsManager.getInstance().getCustomProviders().find((p: any) => p.id === providerId);
 
       if (!provider) {
@@ -235,9 +289,10 @@ export function registerCredentialHandlers(appState: AppState): void {
         ibmWatsonRegion: creds.ibmWatsonRegion || 'us-south',
         hasResume: !!creds.resumePath,
         hasJobDescription: !!creds.jobDescriptionText,
+        airGapMode: !!creds.airGapMode,
       };
     } catch (error: any) {
-      return { hasGeminiKey: false, hasGroqKey: false, hasOpenaiKey: false, hasClaudeKey: false, hasNvidiaKey: false, hasDeepseekKey: false, googleServiceAccountPath: null, sttProvider: 'google', groqSttModel: 'whisper-large-v3-turbo', hasSttGroqKey: false, hasSttOpenaiKey: false, hasDeepgramKey: false, hasElevenLabsKey: false, hasAzureKey: false, azureRegion: 'eastus', hasIbmWatsonKey: false, ibmWatsonRegion: 'us-south', hasResume: false, hasJobDescription: false };
+      return { hasGeminiKey: false, hasGroqKey: false, hasOpenaiKey: false, hasClaudeKey: false, hasNvidiaKey: false, hasDeepseekKey: false, googleServiceAccountPath: null, sttProvider: 'google', groqSttModel: 'whisper-large-v3-turbo', hasSttGroqKey: false, hasSttOpenaiKey: false, hasDeepgramKey: false, hasElevenLabsKey: false, hasAzureKey: false, azureRegion: 'eastus', hasIbmWatsonKey: false, ibmWatsonRegion: 'us-south', hasResume: false, hasJobDescription: false, airGapMode: false };
     }
   });
 
@@ -247,11 +302,15 @@ export function registerCredentialHandlers(appState: AppState): void {
 
   ipcMain.handle("set-model-preference", (_, type: "flash" | "pro") => {
     try {
+      const { CredentialsManager } = require('../services/CredentialsManager');
+      if (CredentialsManager.getInstance().getAirGapMode()) {
+        return { success: false, error: "Full Privacy Mode is enabled. Choose a local Ollama model or disable Full Privacy Mode first." };
+      }
+
       const { GEMINI_FLASH_MODEL, GEMINI_PRO_MODEL } = require('../llm/prompts');
       const im = appState.getIntelligenceManager();
       const model = type === 'pro' ? GEMINI_PRO_MODEL : GEMINI_FLASH_MODEL;
 
-      const { CredentialsManager } = require('../services/CredentialsManager');
       CredentialsManager.getInstance().setModelPreference(model);
 
       im.setModel(model);
@@ -266,10 +325,15 @@ export function registerCredentialHandlers(appState: AppState): void {
       const llmHelper = appState.processingHelper.getLLMHelper();
       const { CredentialsManager } = require('../services/CredentialsManager');
       const creds = CredentialsManager.getInstance();
+      const isLocalOllama = modelId.startsWith('ollama-');
+
+      if (creds.getAirGapMode() && !isLocalOllama) {
+        return { success: false, error: "Full Privacy Mode is enabled. Choose a local Ollama model or disable Full Privacy Mode first." };
+      }
 
       // Persist model selection to disk
       creds.setModelPreference(modelId);
-      if (modelId.startsWith('ollama-')) {
+      if (isLocalOllama) {
         creds.setOllamaModel(modelId.replace('ollama-', ''));
       }
 
@@ -363,11 +427,11 @@ export function registerCredentialHandlers(appState: AppState): void {
     try {
       const {
         UNIVERSAL_WHAT_TO_ANSWER_PROMPT,
-        UNIVERSAL_ANSWER_PROMPT
+        UNIVERSAL_MEETING_ANSWER_PROMPT
       } = require('../llm/prompts');
       return {
         interviewPrompt: UNIVERSAL_WHAT_TO_ANSWER_PROMPT,
-        meetingPrompt: UNIVERSAL_ANSWER_PROMPT
+        meetingPrompt: UNIVERSAL_MEETING_ANSWER_PROMPT
       };
     } catch (error: any) {
       console.error("Error getting default prompts:", error);
@@ -410,15 +474,84 @@ export function registerCredentialHandlers(appState: AppState): void {
     }
   });
 
+  ipcMain.handle("get-full-privacy-status", async () => {
+    try {
+      return await getFullPrivacyStatus();
+    } catch (error: any) {
+      console.error("Error getting full privacy status:", error);
+      return {
+        enabled: false,
+        localWhisperReady: false,
+        localWhisperModelReady: false,
+        ollamaReachable: false,
+        localTextModelReady: false,
+        localVisionModelReady: false,
+        activeOllamaModel: "",
+        errors: ["missing_whisper_runtime", "missing_whisper_model", "ollama_unreachable"]
+      };
+    }
+  });
+
   ipcMain.handle("set-air-gap-mode", async (_, enabled: boolean) => {
     try {
       const { CredentialsManager } = require('../services/CredentialsManager');
-      CredentialsManager.getInstance().setAirGapMode(enabled);
-
+      const creds = CredentialsManager.getInstance();
       const llmHelper = appState.processingHelper.getLLMHelper();
-      llmHelper.setAirGapMode(enabled);
+      const alreadyEnabled = creds.getAirGapMode();
 
-      return { success: true };
+      if (alreadyEnabled === enabled) {
+        return { success: true, status: await getFullPrivacyStatus() };
+      }
+
+      if (enabled) {
+        const previousSttProvider = creds.getSttProvider();
+        if (previousSttProvider !== 'local-whisper') {
+          creds.setFullPrivacyPreviousSttProvider(previousSttProvider);
+        }
+
+        const previousModelId = mapCurrentModelToSelectionId(appState);
+        if (previousModelId && !previousModelId.startsWith('ollama-')) {
+          creds.setFullPrivacyPreviousModel(previousModelId);
+        }
+
+        creds.setAirGapMode(true);
+        creds.setSttProvider('local-whisper');
+        llmHelper.setAirGapMode(true);
+
+        const privacyStatus = await getFullPrivacyStatus();
+        await llmHelper.switchToOllama(privacyStatus.activeOllamaModel || creds.getOllamaModel());
+
+        const currentOllamaModel = llmHelper.getCurrentModel();
+        if (currentOllamaModel) {
+          creds.setOllamaModel(currentOllamaModel);
+          const modelId = `ollama-${currentOllamaModel}`;
+          creds.setModelPreference(modelId);
+          broadcastToWindows('model-selected', { modelId });
+        }
+      } else {
+        const previousSttProvider = creds.getFullPrivacyPreviousSttProvider();
+        const previousModelId = creds.getFullPrivacyPreviousModel();
+
+        creds.setAirGapMode(false);
+        llmHelper.setAirGapMode(false);
+
+        if (previousSttProvider) {
+          creds.setSttProvider(previousSttProvider);
+        }
+
+        if (previousModelId) {
+          creds.setModelPreference(previousModelId);
+          llmHelper.setModel(previousModelId, creds.getCustomProviders());
+          broadcastToWindows('model-selected', { modelId: previousModelId });
+        }
+
+        creds.clearFullPrivacyBackups();
+      }
+
+      appState.getIntelligenceManager().initializeLLMs();
+      await appState.reconfigureSttProvider();
+
+      return { success: true, status: await getFullPrivacyStatus() };
     } catch (error: any) {
       console.error("Error setting air gap mode:", error);
       return { success: false, error: error.message };

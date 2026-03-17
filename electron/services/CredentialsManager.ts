@@ -55,6 +55,8 @@ export interface StoredCredentials {
     ollamaModel?: string;
     // Security
     airGapMode?: boolean;
+    fullPrivacyPreviousSttProvider?: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper';
+    fullPrivacyPreviousModel?: string;
     // Licensing
     gumroadLicenseKey?: string;
     machineId?: string;
@@ -203,6 +205,14 @@ export class CredentialsManager {
 
     public getAirGapMode(): boolean {
         return !!this.credentials.airGapMode;
+    }
+
+    public getFullPrivacyPreviousSttProvider(): 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper' | undefined {
+        return this.credentials.fullPrivacyPreviousSttProvider;
+    }
+
+    public getFullPrivacyPreviousModel(): string | undefined {
+        return this.credentials.fullPrivacyPreviousModel;
     }
 
     public getAllCredentials(): StoredCredentials {
@@ -413,16 +423,29 @@ export class CredentialsManager {
 
     public setAirGapMode(enabled: boolean): void {
         this.credentials.airGapMode = enabled;
-        if (enabled) {
-            this.credentials.sttProvider = 'local-whisper';
-        }
         this.saveCredentials();
-        console.log(`[CredentialsManager] Air-Gap Mode set to: ${enabled} (STT: ${this.credentials.sttProvider})`);
+        console.log(`[CredentialsManager] Full Privacy Mode set to: ${enabled} (STT: ${this.credentials.sttProvider})`);
 
         const { BrowserWindow } = require('electron');
         BrowserWindow.getAllWindows().forEach((win: any) => {
             win.webContents.send('air-gap-changed', enabled);
         });
+    }
+
+    public setFullPrivacyPreviousSttProvider(provider: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper'): void {
+        this.credentials.fullPrivacyPreviousSttProvider = provider;
+        this.saveCredentials();
+    }
+
+    public setFullPrivacyPreviousModel(modelId: string): void {
+        this.credentials.fullPrivacyPreviousModel = modelId;
+        this.saveCredentials();
+    }
+
+    public clearFullPrivacyBackups(): void {
+        this.credentials.fullPrivacyPreviousSttProvider = undefined;
+        this.credentials.fullPrivacyPreviousModel = undefined;
+        this.saveCredentials();
     }
 
     // License setters

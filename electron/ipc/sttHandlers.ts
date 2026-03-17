@@ -15,10 +15,15 @@ export function registerSTTHandlers(appState: AppState): void {
   // STT Provider Management
   // ==========================================
 
-  ipcMain.handle("set-stt-provider", async (_, provider: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson') => {
+  ipcMain.handle("set-stt-provider", async (_, provider: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper') => {
     try {
       const { CredentialsManager } = require('../services/CredentialsManager');
-      CredentialsManager.getInstance().setSttProvider(provider);
+      const creds = CredentialsManager.getInstance();
+      if (creds.getAirGapMode() && provider !== 'local-whisper') {
+        return { success: false, error: "Full Privacy Mode is enabled. Disable it before choosing a cloud STT provider." };
+      }
+
+      creds.setSttProvider(provider);
       await appState.reconfigureSttProvider();
       return { success: true };
     } catch (error: any) {

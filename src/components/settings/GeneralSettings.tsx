@@ -2,6 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { Globe, RotateCcw, Sparkles } from 'lucide-react';
 
 interface GeneralSettingsProps { }
+interface FullPrivacyStatus {
+    enabled: boolean;
+    localWhisperReady: boolean;
+    localWhisperModelReady: boolean;
+    ollamaReachable: boolean;
+    localTextModelReady: boolean;
+    localVisionModelReady: boolean;
+    activeOllamaModel: string;
+    errors: string[];
+}
+
+const DEFAULT_FULL_PRIVACY_STATUS: FullPrivacyStatus = {
+    enabled: false,
+    localWhisperReady: false,
+    localWhisperModelReady: false,
+    ollamaReachable: false,
+    localTextModelReady: false,
+    localVisionModelReady: false,
+    activeOllamaModel: '',
+    errors: [],
+};
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
     // Recognition Language
@@ -14,6 +35,19 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
 
     // Security
     const [airGapMode, setAirGapMode] = useState(false);
+    const [fullPrivacyStatus, setFullPrivacyStatus] = useState<FullPrivacyStatus>(DEFAULT_FULL_PRIVACY_STATUS);
+    const [isApplyingFullPrivacy, setIsApplyingFullPrivacy] = useState(false);
+
+    const loadFullPrivacyStatus = async () => {
+        try {
+            const status = await window.electronAPI?.getFullPrivacyStatus?.();
+            if (status) {
+                setFullPrivacyStatus(status);
+            }
+        } catch (error) {
+            console.error("Failed to load full privacy status:", error);
+        }
+    };
 
     useEffect(() => {
         const loadInitialData = async () => {
@@ -30,6 +64,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
             } catch (e) {
                 console.error("Failed to load stored credentials:", e);
             }
+
+            await loadFullPrivacyStatus();
 
             // Load Languages
             if (window.electronAPI?.getRecognitionLanguages) {
@@ -69,6 +105,20 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
             }
         };
         loadInitialData();
+
+        let removeAirGapListener: (() => void) | undefined;
+        if (window.electronAPI?.onAirGapChanged) {
+            removeAirGapListener = window.electronAPI.onAirGapChanged((enabled) => {
+                setAirGapMode(enabled);
+                loadFullPrivacyStatus();
+            });
+        }
+
+        return () => {
+            if (removeAirGapListener) {
+                removeAirGapListener();
+            }
+        };
     }, []);
 
     const applyAutoLanguage = (langs: any) => {
@@ -113,9 +163,25 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
 
     const handleAirGapToggle = async () => {
         const newMode = !airGapMode;
+        setIsApplyingFullPrivacy(true);
         setAirGapMode(newMode);
-        if (window.electronAPI?.setAirGapMode) {
-            await window.electronAPI.setAirGapMode(newMode);
+        try {
+            if (window.electronAPI?.setAirGapMode) {
+                const result = await window.electronAPI.setAirGapMode(newMode);
+                if (!result?.success) {
+                    setAirGapMode(!newMode);
+                }
+                if (result?.status) {
+                    setFullPrivacyStatus(result.status);
+                } else {
+                    await loadFullPrivacyStatus();
+                }
+            }
+        } catch (error) {
+            console.error("Failed to toggle Full Privacy Mode:", error);
+            setAirGapMode(!newMode);
+        } finally {
+            setIsApplyingFullPrivacy(false);
         }
     };
 
@@ -179,20 +245,72 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = () => {
                     {/* Air-Gap Mode */}
                     <div className="bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle relative overflow-hidden">
                         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-500 to-orange-500 opacity-50"></div>
-                        <div className="flex items-center justify-between mb-2">
-                            <label className="block text-xs font-bold text-red-400 uppercase tracking-wide">Strict Air-Gap Mode</label>
+                        <div className="flex items-center justify-between mb-3">
+                            <div>
+                                <label className="block text-xs font-bold text-red-400 uppercase tracking-wide">Full Privacy Mode</label>
+                                <p className="mt-1 text-[11px] text-text-tertiary">
+                                    Forces Local Whisper and Ollama only. Cloud STT and cloud LLM providers are blocked until local dependencies are ready.
+                                </p>
+                            </div>
                             <button
                                 onClick={handleAirGapToggle}
-                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full focus:outline-none transition-colors duration-200 ease-in-out ${airGapMode ? 'bg-red-500' : 'bg-bg-input'}`}
+                                disabled={isApplyingFullPrivacy}
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center justify-center rounded-full focus:outline-none transition-colors duration-200 ease-in-out ${airGapMode ? 'bg-red-500' : 'bg-bg-input'} ${isApplyingFullPrivacy ? 'cursor-wait opacity-60' : 'cursor-pointer'}`}
                                 role="switch"
                                 aria-checked={airGapMode}
                             >
                                 <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${airGapMode ? 'translate-x-2' : '-translate-x-2'}`} />
                             </button>
                         </div>
-                        <p className="text-xs text-text-secondary leading-relaxed">
-                            When enabled, <strong className="text-text-primary">Ghost Writer requires Local Whisper STT and Ollama LLM to be used.</strong> It will aggressively block any outgoing requests to public cloud providers (OpenAI, Gemini, Deepgram, etc.) to ensure complete data privacy for highly sensitive meetings.
-                        </p>
+                        <div className="rounded-lg border border-border-subtle bg-bg-input/60 p-3">
+                            <div className="grid gap-2 text-xs text-text-secondary">
+                                <div className="flex items-center justify-between">
+                                    <span>Local Whisper runtime</span>
+                                    <span className={fullPrivacyStatus.localWhisperReady ? 'text-emerald-400' : 'text-red-400'}>
+                                        {fullPrivacyStatus.localWhisperReady ? 'Ready' : 'Missing'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span>Local Whisper model</span>
+                                    <span className={fullPrivacyStatus.localWhisperModelReady ? 'text-emerald-400' : 'text-red-400'}>
+                                        {fullPrivacyStatus.localWhisperModelReady ? 'Ready' : 'Missing'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span>Ollama service</span>
+                                    <span className={fullPrivacyStatus.ollamaReachable ? 'text-emerald-400' : 'text-red-400'}>
+                                        {fullPrivacyStatus.ollamaReachable ? 'Ready' : 'Offline'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span>Local text model</span>
+                                    <span className={fullPrivacyStatus.localTextModelReady ? 'text-emerald-400' : 'text-red-400'}>
+                                        {fullPrivacyStatus.localTextModelReady ? 'Ready' : 'Missing'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span>Local vision model</span>
+                                    <span className={fullPrivacyStatus.localVisionModelReady ? 'text-emerald-400' : 'text-red-400'}>
+                                        {fullPrivacyStatus.localVisionModelReady ? 'Ready' : 'Missing'}
+                                    </span>
+                                </div>
+                            </div>
+                            <p className="mt-3 text-[11px] text-text-tertiary">
+                                Active local model: <span className="text-text-primary">{fullPrivacyStatus.activeOllamaModel || 'None detected'}</span>
+                            </p>
+                            {airGapMode && fullPrivacyStatus.errors.length > 0 && (
+                                <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-[11px] text-red-200">
+                                    <div className="font-semibold text-red-300">Full Privacy Mode is enabled but blocked.</div>
+                                    <ul className="mt-2 list-disc pl-4 space-y-1">
+                                        {fullPrivacyStatus.errors.includes('missing_whisper_runtime') && <li>Install or repair the Local Whisper runtime.</li>}
+                                        {fullPrivacyStatus.errors.includes('missing_whisper_model') && <li>Download or point Ghost Writer to a Local Whisper model.</li>}
+                                        {fullPrivacyStatus.errors.includes('ollama_unreachable') && <li>Start Ollama locally before asking Ghost Writer to answer.</li>}
+                                        {fullPrivacyStatus.errors.includes('missing_local_text_model') && <li>Install a local text model such as `ollama pull llama3.2`.</li>}
+                                        {fullPrivacyStatus.errors.includes('missing_local_vision_model') && <li>Install a local vision model such as `ollama pull llava:7b` or `ollama pull qwen2.5-vl:7b` for screenshot analysis.</li>}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="bg-[var(--bg-card-alpha)] backdrop-blur-xl rounded-xl p-5 border border-border-subtle">

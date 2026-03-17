@@ -23,7 +23,8 @@ export class STTFactory {
      */
     public static async createSTT(speakerType: 'user' | 'interviewer'): Promise<ISTT> {
         const creds = CredentialsManager.getInstance();
-        const sttProvider = creds.getAirGapMode() ? 'local-whisper' : creds.getSttProvider();
+        const fullPrivacyMode = creds.getAirGapMode();
+        const sttProvider = fullPrivacyMode ? 'local-whisper' : creds.getSttProvider();
 
         console.log(`[STTFactory] Creating STT for ${speakerType} (Requested Provider: ${sttProvider})`);
 
@@ -38,8 +39,14 @@ export class STTFactory {
                 if (health.success) {
                     return whisper as ISTT;
                 }
+                if (fullPrivacyMode) {
+                    throw new Error(`Full Privacy Mode is enabled, but Local Whisper failed its health check: ${health.error}`);
+                }
                 console.warn(`[STTFactory] Local Whisper health check failed: ${health.error}. Falling back to Google...`);
             } else {
+                if (fullPrivacyMode) {
+                    throw new Error("Full Privacy Mode is enabled, but Local Whisper is not operational. Configure the Local Whisper runtime and model before continuing.");
+                }
                 console.warn(`[STTFactory] Local Whisper is not operational after setup/repair. Falling back to Google...`);
             }
             return new GoogleSTT() as ISTT;
@@ -85,6 +92,9 @@ export class STTFactory {
         }
 
         // 4. Default Fallback (Google Web Speech / GoogleSTT)
+        if (fullPrivacyMode) {
+            throw new Error("Full Privacy Mode is enabled, so cloud STT providers are blocked. Configure Local Whisper before continuing.");
+        }
         return new GoogleSTT() as ISTT;
     }
 

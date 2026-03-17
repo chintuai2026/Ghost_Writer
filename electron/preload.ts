@@ -60,8 +60,9 @@ interface ElectronAPI {
   getStoredCredentials: () => Promise<{ hasGeminiKey: boolean; hasGroqKey: boolean; hasOpenaiKey: boolean; hasClaudeKey: boolean; hasNvidiaKey: boolean; hasDeepseekKey: boolean; googleServiceAccountPath: string | null; sttProvider: string; hasSttGroqKey: boolean; hasSttOpenaiKey: boolean; hasDeepgramKey: boolean; hasElevenLabsKey: boolean; hasAzureKey: boolean; azureRegion: string; hasIbmWatsonKey: boolean; ibmWatsonRegion: string; hasResume: boolean; hasJobDescription: boolean; airGapMode: boolean }>
 
   // Security
-  setAirGapMode: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
+  setAirGapMode: (enabled: boolean) => Promise<{ success: boolean; error?: string; status?: { enabled: boolean; localWhisperReady: boolean; localWhisperModelReady: boolean; ollamaReachable: boolean; localTextModelReady: boolean; localVisionModelReady: boolean; activeOllamaModel: string; errors: string[] } }>
   getAirGapMode: () => Promise<boolean>
+  getFullPrivacyStatus: () => Promise<{ enabled: boolean; localWhisperReady: boolean; localWhisperModelReady: boolean; ollamaReachable: boolean; localTextModelReady: boolean; localVisionModelReady: boolean; activeOllamaModel: string; errors: string[] }>
 
   // STT Provider Management
   setSttProvider: (provider: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'local-whisper') => Promise<{ success: boolean; error?: string }>
@@ -425,6 +426,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Security
   getAirGapMode: () => ipcRenderer.invoke("get-air-gap-mode"),
   setAirGapMode: (enabled: boolean) => ipcRenderer.invoke("set-air-gap-mode", enabled),
+  getFullPrivacyStatus: () => ipcRenderer.invoke("get-full-privacy-status"),
 
   // Local Whisper Setup
   getWhisperStatus: () => ipcRenderer.invoke("get-whisper-status"),

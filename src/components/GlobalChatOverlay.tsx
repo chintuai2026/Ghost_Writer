@@ -501,7 +501,7 @@ const GlobalChatOverlay: React.FC<GlobalChatOverlayProps> = ({
                                         <span className="text-[11px] font-black uppercase tracking-[0.2em] text-text-primary">Global Intelligence</span>
                                         {llmConfig?.isAirGap && (
                                             <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-tighter rounded border border-emerald-500/30">
-                                                Air-Gap
+                                                Full Privacy
                                             </span>
                                         )}
                                     </div>
