@@ -16,6 +16,12 @@ interface FullPrivacyStatus {
     errors: string[];
 }
 
+interface WhisperStatusLike {
+    hasBinary?: boolean;
+    hasModel?: boolean;
+    hasOperationalServer?: boolean;
+}
+
 const DEFAULT_FULL_PRIVACY_STATUS: FullPrivacyStatus = {
     enabled: false,
     localWhisperReady: false,
@@ -25,6 +31,39 @@ const DEFAULT_FULL_PRIVACY_STATUS: FullPrivacyStatus = {
     localVisionModelReady: false,
     activeOllamaModel: '',
     errors: [],
+};
+
+const OLLAMA_VISION_MODEL_HINTS = [
+    'llava',
+    'minicpm-v',
+    'moondream',
+    'qwen2-vl',
+    'qwen3-vl',
+    'qwen3.5',
+    'minimax',
+    'kimi',
+    'glm',
+    'medllama',
+    'gemini',
+    'vl',
+    'vision'
+];
+
+const isLikelyVisionModelName = (modelName: string): boolean => {
+    const lower = modelName.toLowerCase();
+    return OLLAMA_VISION_MODEL_HINTS.some((hint) => lower.includes(hint));
+};
+
+const buildFullPrivacyErrors = (status: Omit<FullPrivacyStatus, 'errors'>): string[] => {
+    const errors: string[] = [];
+
+    if (!status.localWhisperReady) errors.push('missing_whisper_runtime');
+    if (!status.localWhisperModelReady) errors.push('missing_whisper_model');
+    if (!status.ollamaReachable) errors.push('ollama_unreachable');
+    if (status.ollamaReachable && !status.localTextModelReady) errors.push('missing_local_text_model');
+    if (status.ollamaReachable && !status.localVisionModelReady) errors.push('missing_local_vision_model');
+
+    return errors;
 };
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
@@ -44,14 +83,97 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     const [fullPrivacyStatus, setFullPrivacyStatus] = useState<FullPrivacyStatus>(DEFAULT_FULL_PRIVACY_STATUS);
     const [isApplyingFullPrivacy, setIsApplyingFullPrivacy] = useState(false);
 
-    const loadFullPrivacyStatus = async () => {
+    const deriveFullPrivacyStatusFromLiveApis = async (enabled: boolean): Promise<FullPrivacyStatus> => {
+        let whisperStatus: WhisperStatusLike | null = null;
+        let ollamaReachable = false;
+        let availableOllamaModels: string[] = [];
+        let activeOllamaModel = '';
+
         try {
-            const status = await window.electronAPI?.getFullPrivacyStatus?.();
-            if (status) {
-                setFullPrivacyStatus(status);
+            whisperStatus = await window.electronAPI?.getWhisperStatus?.() as WhisperStatusLike | null;
+        } catch (error) {
+            console.error("Failed to load whisper status for Full Privacy Mode:", error);
+        }
+
+        try {
+            const ollamaStatus = await window.electronAPI?.checkOllamaStatus?.();
+            ollamaReachable = !!ollamaStatus?.running;
+        } catch (error) {
+            console.error("Failed to load Ollama service status for Full Privacy Mode:", error);
+        }
+
+        try {
+            availableOllamaModels = await window.electronAPI?.getAvailableOllamaModels?.() || [];
+        } catch (error) {
+            console.error("Failed to load Ollama model list for Full Privacy Mode:", error);
+        }
+
+        try {
+            const currentConfig = await window.electronAPI?.getCurrentLlmConfig?.();
+            if (currentConfig?.isOllama && currentConfig.model) {
+                activeOllamaModel = currentConfig.model;
             }
         } catch (error) {
-            console.error("Failed to load full privacy status:", error);
+            console.error("Failed to load active Ollama model for Full Privacy Mode:", error);
+        }
+
+        const whisperRuntimeReady = !!(whisperStatus?.hasOperationalServer ?? whisperStatus?.hasBinary);
+        const whisperModelReady = !!whisperStatus?.hasModel;
+        const localTextModelReady = availableOllamaModels.some((model) => !isLikelyVisionModelName(model));
+        const localVisionModelReady = availableOllamaModels.some((model) => isLikelyVisionModelName(model));
+
+        if (!activeOllamaModel) {
+            activeOllamaModel =
+                availableOllamaModels.find((model) => !isLikelyVisionModelName(model)) ||
+                availableOllamaModels[0] ||
+                '';
+        }
+
+        const partialStatus = {
+            enabled,
+            localWhisperReady: whisperRuntimeReady,
+            localWhisperModelReady: whisperModelReady,
+            ollamaReachable,
+            localTextModelReady,
+            localVisionModelReady,
+            activeOllamaModel,
+        };
+
+        return {
+            ...partialStatus,
+            errors: buildFullPrivacyErrors(partialStatus),
+        };
+    };
+
+    const loadFullPrivacyStatus = async (enabledOverride?: boolean) => {
+        const enabled = enabledOverride ?? airGapMode;
+
+        try {
+            const backendStatus = await window.electronAPI?.getFullPrivacyStatus?.();
+            const fallbackStatus = await deriveFullPrivacyStatusFromLiveApis(backendStatus?.enabled ?? enabled);
+
+            if (backendStatus) {
+                const mergedBase = {
+                    enabled: backendStatus.enabled,
+                    localWhisperReady: backendStatus.localWhisperReady || fallbackStatus.localWhisperReady,
+                    localWhisperModelReady: backendStatus.localWhisperModelReady || fallbackStatus.localWhisperModelReady,
+                    ollamaReachable: backendStatus.ollamaReachable || fallbackStatus.ollamaReachable,
+                    localTextModelReady: backendStatus.localTextModelReady || fallbackStatus.localTextModelReady,
+                    localVisionModelReady: backendStatus.localVisionModelReady || fallbackStatus.localVisionModelReady,
+                    activeOllamaModel: backendStatus.activeOllamaModel || fallbackStatus.activeOllamaModel,
+                };
+
+                setFullPrivacyStatus({
+                    ...mergedBase,
+                    errors: buildFullPrivacyErrors(mergedBase),
+                });
+                return;
+            }
+
+            setFullPrivacyStatus(fallbackStatus);
+        } catch (error) {
+            console.error("Failed to load Full Privacy Mode status:", error);
+            setFullPrivacyStatus(await deriveFullPrivacyStatusFromLiveApis(enabled));
         }
     };
 
@@ -66,12 +188,14 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 }
                 if (creds && creds.airGapMode !== undefined) {
                     setAirGapMode(creds.airGapMode);
+                    await loadFullPrivacyStatus(creds.airGapMode);
+                } else {
+                    await loadFullPrivacyStatus(false);
                 }
             } catch (e) {
                 console.error("Failed to load stored credentials:", e);
+                await loadFullPrivacyStatus(false);
             }
-
-            await loadFullPrivacyStatus();
 
             // Load Languages
             if (window.electronAPI?.getRecognitionLanguages) {
@@ -116,7 +240,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         if (window.electronAPI?.onAirGapChanged) {
             removeAirGapListener = window.electronAPI.onAirGapChanged((enabled) => {
                 setAirGapMode(enabled);
-                loadFullPrivacyStatus();
+                loadFullPrivacyStatus(enabled);
             });
         }
 
@@ -177,11 +301,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 if (!result?.success) {
                     setAirGapMode(!newMode);
                 }
-                if (result?.status) {
-                    setFullPrivacyStatus(result.status);
-                } else {
-                    await loadFullPrivacyStatus();
-                }
+                await loadFullPrivacyStatus(newMode);
             }
         } catch (error) {
             console.error("Failed to toggle Full Privacy Mode:", error);
