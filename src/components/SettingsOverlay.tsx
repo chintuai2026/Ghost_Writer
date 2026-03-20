@@ -3,7 +3,7 @@ import {
     X, Mic, Speaker, Monitor, Keyboard, User, LifeBuoy, LogOut, Upload,
     ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
     Camera, RotateCcw, Eye, Layout, MessageSquare, Crop,
-    ChevronDown, Check, BadgeCheck, Power, Palette, Calendar, Ghost, Sun, Moon, RefreshCw, Info, Globe, FlaskConical, Terminal, Settings, Activity, ExternalLink, FileText, Cpu, Loader2, Download, Briefcase, ClipboardList
+    ChevronDown, Check, BadgeCheck, Power, Palette, Calendar, Ghost, Sun, Moon, RefreshCw, Info, Globe, FlaskConical, Terminal, Settings, Activity, ExternalLink, FileText, Cpu, Loader2, Download, Briefcase, ClipboardList, Minus
 } from 'lucide-react';
 import { analytics } from '../lib/analytics/analytics.service';
 import icon from "./icon.ico";
@@ -773,11 +773,27 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                     >
                         {/* Dedicated Sidebar */}
                         <div className="w-64 bg-[var(--bg-sidebar-alpha)] border-r border-border-subtle flex flex-col backdrop-blur-2xl">
-                            <div className="p-8 border-b border-border-subtle">
+                            <div className="p-8 border-b border-border-subtle flex items-center justify-between gap-4">
                                 <h2 className="text-xl font-bold text-text-primary tracking-tight flex items-center gap-2">
                                     <Settings size={20} className="text-text-secondary" />
                                     Settings
                                 </h2>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        onClick={() => window.electronAPI?.minimizeCurrentWindow?.()}
+                                        className="p-2 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-white/5 transition-colors"
+                                        title="Minimize"
+                                    >
+                                        <Minus size={14} />
+                                    </button>
+                                    <button
+                                        onClick={onClose}
+                                        className="p-2 rounded-lg text-text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                        title="Close Settings"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                                 <div className="space-y-1">

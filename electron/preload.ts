@@ -151,6 +151,7 @@ interface ElectronAPI {
   invoke: (channel: string, ...args: any[]) => Promise<any>
   showWindow: () => Promise<void>
   hideWindow: () => Promise<void>
+  minimizeCurrentWindow: () => Promise<void>
   onToggleExpand: (callback: () => void) => () => void
   onQuickAnswer: (callback: () => void) => () => void
   toggleAdvancedSettings: () => Promise<void>
@@ -349,6 +350,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   toggleWindow: () => ipcRenderer.invoke("toggle-window"),
   showWindow: () => ipcRenderer.invoke("show-window"),
   hideWindow: () => ipcRenderer.invoke("hide-window"),
+  minimizeCurrentWindow: () => ipcRenderer.invoke("minimize-current-window"),
   toggleAdvancedSettings: () => ipcRenderer.invoke("toggle-advanced-settings"),
   openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
   setUndetectable: (state: boolean) => ipcRenderer.invoke("set-undetectable", state),

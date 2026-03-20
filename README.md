@@ -8,7 +8,7 @@
   [![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=for-the-badge)](docs/LICENSE)
   [![Release](https://img.shields.io/badge/release-v1.0.0-0ea5e9?style=for-the-badge)](https://github.com/chintuai2026/Ghost_Writer/releases)
   [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20arm64-111827?style=for-the-badge)](https://github.com/chintuai2026/Ghost_Writer/releases)
-  [![Electron](https://img.shields.io/badge/Electron-29-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
+  [![Electron](https://img.shields.io/badge/Electron-32-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
   [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
   [![Rust](https://img.shields.io/badge/Rust-Native-DEA584?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 
@@ -115,6 +115,8 @@ Direct latest-download URLs:
 4. Pick your model provider.
 5. Start a meeting session and use quick actions like `What to Answer`, `Recap`, or `Follow Up`.
 
+The packaged app checks GitHub Releases for updates and surfaces update status in Settings.
+
 ## Demo And Onboarding
 
 Ghost Writer includes a built-in demo path for first-time testing.
@@ -122,13 +124,13 @@ Ghost Writer includes a built-in demo path for first-time testing.
 If the demo meeting is missing:
 
 1. Open `Settings`
-2. Go to `General`
+2. Go to `Appearance`
 3. Use `Restore Demo Meeting`
 
 If you want to replay onboarding:
 
 1. Open `Settings`
-2. Go to `General`
+2. Go to `Appearance`
 3. Use `Replay Onboarding`
 
 If you want to restore the built-in interview or meeting defaults:

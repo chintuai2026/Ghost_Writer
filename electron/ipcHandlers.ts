@@ -214,6 +214,22 @@ export function initializeIpcHandlers(appState: AppState): void {
     appState.hideMainWindow()
   })
 
+  safeIpcHandle("minimize-current-window", async (event) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender)
+    const overlayWindow = appState.getWindowHelper().getOverlayWindow()
+
+    if (!senderWindow || senderWindow.isDestroyed()) {
+      return
+    }
+
+    if (overlayWindow && senderWindow === overlayWindow) {
+      appState.getWindowHelper().switchToLauncher()
+      return
+    }
+
+    senderWindow.minimize()
+  })
+
   safeIpcHandle("reset-queues", async () => {
     try {
       appState.clearQueues()

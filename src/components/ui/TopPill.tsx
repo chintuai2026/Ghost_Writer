@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Minus, X } from "lucide-react";
 import icon from "../icon.ico";
 
 interface TopPillProps {
     expanded: boolean;
     onToggle: () => void;
+    onMinimize: () => void;
     onQuit: () => void;
 }
 
 export default function TopPill({
     expanded,
     onToggle,
+    onMinimize,
     onQuit,
 }: TopPillProps) {
 
@@ -81,6 +83,22 @@ export default function TopPill({
 
                 {/* STOP / QUIT BUTTON */}
                 <button
+                    onClick={onMinimize}
+                    className="
+            w-8 h-8
+            rounded-full
+            bg-white/5
+            flex items-center justify-center
+            text-text-primary
+            interaction-base interaction-press
+            hover:bg-white/10 hover:text-white
+          "
+                    title="Minimize to launcher"
+                >
+                    <Minus className="w-3.5 h-3.5 opacity-80" />
+                </button>
+
+                <button
                     onClick={onQuit}
                     className="
             w-8 h-8
@@ -91,8 +109,9 @@ export default function TopPill({
             interaction-base interaction-press
             hover:bg-red-500/10 hover:text-red-400
           "
+                    title="Close session"
                 >
-                    <div className="w-3.5 h-3.5 rounded-[3px] bg-current opacity-80" />
+                    <X className="w-3.5 h-3.5 opacity-80" />
                 </button>
             </div>
         </div>

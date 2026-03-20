@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, EyeOff, Ghost, Plus, Mail, Link as LinkIcon, ChevronDown, Trash2, Bell, Check, Download, Play } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, EyeOff, Ghost, Plus, Mail, Link as LinkIcon, ChevronDown, Trash2, Bell, Check, Download, Play, Minus, X } from 'lucide-react';
 import { generateMeetingPDF } from '../utils/pdfGenerator';
 import icon from "./icon.ico";
 import mainui from "../UI_comp/mainui.png";
@@ -366,6 +366,20 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
                         title="Settings"
                     >
                         <Settings size={18} />
+                    </button>
+                    <button
+                        onClick={() => window.electronAPI?.minimizeCurrentWindow?.()}
+                        className="p-2 text-text-tertiary hover:text-text-primary transition-all duration-300 rounded-lg hover:bg-bg-item-surface"
+                        title="Minimize"
+                    >
+                        <Minus size={18} />
+                    </button>
+                    <button
+                        onClick={() => window.electronAPI?.quitApp?.()}
+                        className="p-2 text-text-tertiary hover:text-red-400 transition-all duration-300 rounded-lg hover:bg-red-500/10"
+                        title="Close App"
+                    >
+                        <X size={18} />
                     </button>
                 </div>
             </header>

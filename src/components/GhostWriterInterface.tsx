@@ -1410,6 +1410,7 @@ Provide only the answer, nothing else.`;
                         <TopPill
                             expanded={isExpanded}
                             onToggle={() => setIsExpanded(!isExpanded)}
+                            onMinimize={() => window.electronAPI.setWindowMode('launcher')}
                             onQuit={() => onEndMeeting ? onEndMeeting() : window.electronAPI.quitApp()}
                         />
                         <div className="
