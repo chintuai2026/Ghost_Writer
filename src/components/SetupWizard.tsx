@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ArrowRight, ArrowLeft, Mic, Brain, Sparkles, Monitor, Activity, ShieldCheck, Loader2, Globe, Command } from 'lucide-react';
+import {
+    SetupWizardFullPrivacyStatus,
+    SetupWizardGpuStatus,
+    SetupWizardOllamaStatus,
+    SetupWizardSystemInfo,
+    SetupWizardWhisperStatus,
+    canProceedFromDiagnosis,
+    getRecommendedWhisperModel,
+    hasCompletedDiagnosis,
+    isBlockedByFullPrivacy
+} from './setupWizardState';
 
 interface SetupWizardProps {
     onComplete: () => void;
@@ -16,11 +27,12 @@ interface SetupStep {
 
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [currentStep, setCurrentStep] = useState(0);
-    const [systemInfo, setSystemInfo] = useState<{
-        gpu: { success: boolean; info?: any; error?: string } | null;
-        ollama: { success: boolean; running: boolean; models?: any[]; error?: string } | null;
-        whisper: { hasBinary: boolean; hasModel: boolean; isDownloading: boolean; selectedModel: string } | null;
-    }>({ gpu: null, ollama: null, whisper: null });
+    const [systemInfo, setSystemInfo] = useState<SetupWizardSystemInfo>({
+        gpu: null,
+        ollama: null,
+        whisper: null,
+        fullPrivacy: null
+    });
 
     const steps: SetupStep[] = [
         {
@@ -46,34 +58,80 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         }
     ];
 
+    const fallbackGpuStatus: SetupWizardGpuStatus = {
+        success: false,
+        error: 'Hardware analysis unavailable'
+    };
+
+    const fallbackOllamaStatus: SetupWizardOllamaStatus = {
+        success: false,
+        running: false,
+        models: [],
+        error: 'Ollama check unavailable'
+    };
+
+    const fallbackWhisperStatus: SetupWizardWhisperStatus = {
+        hasBinary: false,
+        hasModel: false,
+        hasOperationalServer: false,
+        isDownloading: false,
+        selectedModel: 'small-tdrz'
+    };
+
+    const fallbackFullPrivacyStatus: SetupWizardFullPrivacyStatus = {
+        enabled: false,
+        localWhisperReady: false,
+        localWhisperModelReady: false,
+        ollamaReachable: false,
+        localTextModelReady: false,
+        localVisionModelReady: false,
+        activeOllamaModel: '',
+        errors: []
+    };
+
     const performDiagnosis = async () => {
-        try {
-            const [gpu, ollama, whisper] = await Promise.all([
-                window.electronAPI.getGpuInfo(),
-                window.electronAPI.checkOllamaStatus(),
-                window.electronAPI.getWhisperStatus()
-            ]);
+        const [gpuResult, ollamaResult, whisperResult, fullPrivacyResult] = await Promise.allSettled([
+            window.electronAPI.getGpuInfo(),
+            window.electronAPI.checkOllamaStatus(),
+            window.electronAPI.getWhisperStatus(),
+            window.electronAPI.getFullPrivacyStatus()
+        ]);
 
-            let updatedWhisper = whisper;
+        const gpu = gpuResult.status === 'fulfilled' ? gpuResult.value : fallbackGpuStatus;
+        const ollama = ollamaResult.status === 'fulfilled' ? ollamaResult.value : fallbackOllamaStatus;
+        let whisper = whisperResult.status === 'fulfilled' ? whisperResult.value : fallbackWhisperStatus;
+        const fullPrivacy = fullPrivacyResult.status === 'fulfilled' ? fullPrivacyResult.value : fallbackFullPrivacyStatus;
 
-            if (gpu?.success && gpu.info && whisper) {
-                const vram = gpu.info.vramGB;
-                let recommended = whisper.selectedModel;
-
-                if (vram >= 8) recommended = 'medium';
-                else if (vram >= 4) recommended = 'small';
-                else if (vram > 0) recommended = 'base';
-
-                if (recommended !== whisper.selectedModel) {
-                    await window.electronAPI.invoke('set-local-whisper-model', recommended);
-                    updatedWhisper = await window.electronAPI.getWhisperStatus();
-                }
-            }
-
-            setSystemInfo({ gpu, ollama, whisper: updatedWhisper });
-        } catch (error) {
-            console.error('Diagnosis failed:', error);
+        if (gpuResult.status === 'rejected') {
+            console.error('GPU diagnosis failed:', gpuResult.reason);
         }
+        if (ollamaResult.status === 'rejected') {
+            console.error('Ollama diagnosis failed:', ollamaResult.reason);
+        }
+        if (whisperResult.status === 'rejected') {
+            console.error('Whisper diagnosis failed:', whisperResult.reason);
+        }
+        if (fullPrivacyResult.status === 'rejected') {
+            console.error('Full Privacy diagnosis failed:', fullPrivacyResult.reason);
+        }
+
+        const recommended = getRecommendedWhisperModel(gpu?.info?.vramGB, whisper.selectedModel);
+        if (recommended !== whisper.selectedModel) {
+            try {
+                await window.electronAPI.setLocalWhisperModel(recommended);
+                whisper = await window.electronAPI.getWhisperStatus();
+            } catch (error) {
+                console.error('Failed to update recommended whisper model:', error);
+                whisper = { ...whisper, selectedModel: recommended };
+            }
+        }
+
+        setSystemInfo({
+            gpu,
+            ollama,
+            whisper,
+            fullPrivacy
+        });
     };
 
     useEffect(() => {
@@ -81,18 +139,31 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
         if (currentStep === 1) {
             performDiagnosis().then(() => {
-                // Poll status to auto-proceed when models finish downloading
+                // Keep diagnosis current while the user is on this step.
                 pollInterval = setInterval(async () => {
-                    const status = await window.electronAPI.getWhisperStatus();
-                        if (status) {
-                            setSystemInfo(prev => ({ ...prev, whisper: status }));
-                            if (!status.isDownloading && status.hasModel && status.hasBinary) {
-                                clearInterval(pollInterval);
-                                setTimeout(() => {
-                                    setCurrentStep(2);
-                                }, 2000); // Small delay to let user see the green checks
-                            }
+                    const [ollamaResult, whisperResult, fullPrivacyResult] = await Promise.allSettled([
+                        window.electronAPI.checkOllamaStatus(),
+                        window.electronAPI.getWhisperStatus(),
+                        window.electronAPI.getFullPrivacyStatus()
+                    ]);
+
+                    setSystemInfo((prev) => {
+                        const nextState: SetupWizardSystemInfo = {
+                            ...prev,
+                            ollama: ollamaResult.status === 'fulfilled' ? ollamaResult.value : prev.ollama,
+                            whisper: whisperResult.status === 'fulfilled' ? whisperResult.value : prev.whisper,
+                            fullPrivacy: fullPrivacyResult.status === 'fulfilled' ? fullPrivacyResult.value : prev.fullPrivacy
+                        };
+
+                        if (canProceedFromDiagnosis(nextState)) {
+                            clearInterval(pollInterval);
+                            setTimeout(() => {
+                                setCurrentStep(2);
+                            }, 1500);
                         }
+
+                        return nextState;
+                    });
                 }, 2000);
             });
         }
@@ -120,8 +191,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const canProceed = () => {
         switch (currentStep) {
             case 1:
-                // Don't allow manual proceed if still downloading (unless it explicitly failed/timed out)
-                return systemInfo.whisper && !systemInfo.whisper.isDownloading && systemInfo.whisper.hasModel && systemInfo.whisper.hasBinary;
+                return canProceedFromDiagnosis(systemInfo);
             default: return true;
         }
     };
@@ -153,6 +223,12 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const renderStepContent = () => {
+        const diagnosisComplete = hasCompletedDiagnosis(systemInfo);
+        const fullPrivacyBlocking = isBlockedByFullPrivacy(systemInfo);
+        const whisperReady = !!(systemInfo.whisper && (systemInfo.whisper.hasOperationalServer ?? systemInfo.whisper.hasBinary));
+        const gpuName = systemInfo.gpu?.info?.name || 'Analyzing hardware...';
+        const gpuVram = systemInfo.gpu?.info?.vramGB;
+
         switch (currentStep) {
             case 0:
                 return (
@@ -190,22 +266,46 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                 'GPU Bridge',
                                 <Monitor className="w-4 h-4" />,
                                 systemInfo.gpu ? (systemInfo.gpu.success ? 'success' : 'error') : 'loading',
-                                systemInfo.gpu?.success ? systemInfo.gpu.info.name : (systemInfo.gpu?.error || 'Analyzing hardware...'),
-                                systemInfo.gpu?.success ? `${systemInfo.gpu.info.vramGB}GB VRAM available` : undefined
+                                systemInfo.gpu?.success ? gpuName : (systemInfo.gpu?.error || 'Analyzing hardware...'),
+                                systemInfo.gpu?.success && typeof gpuVram === 'number' ? `${gpuVram}GB VRAM available` : undefined
                             )}
                             {renderDiagnosisCard(
                                 'Local LLM',
                                 <Brain className="w-4 h-4" />,
                                 systemInfo.ollama ? (systemInfo.ollama.running ? 'success' : 'warning') : 'loading',
                                 systemInfo.ollama?.running ? 'Ollama Engine active' : 'Ollama not detected',
-                                systemInfo.ollama?.running ? `${systemInfo.ollama.models?.length || 0} models found` : 'Local privacy requires Ollama'
+                                systemInfo.fullPrivacy?.enabled
+                                    ? (systemInfo.ollama?.running ? `${systemInfo.ollama.models?.length || 0} models found` : 'Required for Full Privacy Mode')
+                                    : (systemInfo.ollama?.running ? `${systemInfo.ollama.models?.length || 0} models found` : 'Optional unless you want a local-only LLM')
                             )}
                             {renderDiagnosisCard(
                                 'Transcription',
                                 <Mic className="w-4 h-4" />,
-                                systemInfo.whisper ? (systemInfo.whisper.hasBinary && systemInfo.whisper.hasModel ? 'success' : 'warning') : 'loading',
-                                systemInfo.whisper ? (systemInfo.whisper.hasBinary ? `Whisper ${systemInfo.whisper.selectedModel} ready` : 'Framework missing') : 'Initializing STT core...',
-                                systemInfo.whisper?.hasModel ? 'GPU acceleration mapped' : 'Models will load on demand'
+                                systemInfo.whisper ? (whisperReady && systemInfo.whisper.hasModel ? 'success' : 'warning') : 'loading',
+                                systemInfo.whisper ? (whisperReady ? `Whisper ${systemInfo.whisper.selectedModel} ready` : 'Local Whisper not installed') : 'Initializing STT core...',
+                                systemInfo.fullPrivacy?.enabled
+                                    ? (systemInfo.whisper?.hasModel ? 'Required for offline transcription' : 'Download the local model to stay fully offline')
+                                    : (systemInfo.whisper?.hasModel ? 'Local transcription available' : 'Optional: configure local or cloud STT later')
+                            )}
+                        </div>
+                        <div className={`mx-auto max-w-sm rounded-2xl border px-4 py-3 text-left text-xs ${systemInfo.fullPrivacy?.enabled
+                            ? (fullPrivacyBlocking
+                                ? 'border-red-500/30 bg-red-500/10 text-red-100'
+                                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100')
+                            : 'border-border-subtle bg-[var(--bg-card-alpha)] text-text-secondary'
+                            }`}>
+                            {!diagnosisComplete ? (
+                                <p>Checking your local runtime options and fallback paths.</p>
+                            ) : systemInfo.fullPrivacy?.enabled ? (
+                                <p>
+                                    {fullPrivacyBlocking
+                                        ? 'Full Privacy Mode is enabled, so Local Whisper and Ollama must be ready before you continue.'
+                                        : 'Full Privacy Mode prerequisites look good. You can continue with a fully local setup.'}
+                                </p>
+                            ) : (
+                                <p>
+                                    Local Whisper, Ollama, and GPU acceleration are optional. You can continue now and configure cloud STT or cloud LLM providers later in Settings.
+                                </p>
                             )}
                         </div>
                     </div>
@@ -228,7 +328,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         <div className="space-y-4">
                             <h2 className="text-3xl font-light tracking-tight text-text-primary">Deployment Ready</h2>
                             <p className="text-text-secondary max-w-sm mx-auto leading-relaxed">
-                                Ghost Writer is configured for your hardware and ready to launch into the full interface.
+                                Ghost Writer is ready to launch. You can keep using local runtimes or switch to cloud STT and cloud LLM providers later in Settings.
                             </p>
                         </div>
                         <div className="flex justify-center gap-6 font-mono text-[9px] uppercase tracking-widest text-text-tertiary opacity-40">
@@ -301,7 +401,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         disabled={!canProceed()}
                         className="flex h-14 min-w-[160px] items-center justify-center gap-3 rounded-2xl bg-[var(--accent-primary)] text-black shadow-[0_16px_40px_-18px_rgba(56,189,248,0.85)] transition-all text-xs font-bold uppercase tracking-[0.2em] hover:brightness-110 disabled:bg-bg-input disabled:text-text-tertiary disabled:shadow-none"
                     >
-                        {currentStep === steps.length - 1 ? 'Activate' : 'Next'}
+                        {currentStep === steps.length - 1 ? 'Activate' : currentStep === 1 && !systemInfo.fullPrivacy?.enabled ? 'Continue' : 'Next'}
                         {currentStep < steps.length - 1 && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />}
                     </button>
                 </div>
