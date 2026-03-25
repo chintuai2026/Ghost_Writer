@@ -108,7 +108,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "chintuai2026",
+        "owner": "Sasidhar-7302",
         "repo": "Ghost_Writer",
         "releaseType": "release"
       }
