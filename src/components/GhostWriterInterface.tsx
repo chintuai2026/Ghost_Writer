@@ -144,7 +144,6 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
 
     // Analytics State
     const requestStartTimeRef = useRef<number | null>(null);
-    const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
     const [isMeetingMode, setIsMeetingMode] = useState(false);
 
     // Sync transcript setting and meeting mode
