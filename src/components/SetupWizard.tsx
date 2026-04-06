@@ -159,13 +159,21 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             clearInterval(pollInterval);
                             setTimeout(() => {
                                 setCurrentStep(2);
-                            }, 1500);
+                            }, 800);
                         }
 
                         return nextState;
                     });
                 }, 2000);
             });
+        }
+
+        // Auto-advance Welcome Step (0 to 1) after 10 seconds if no interaction
+        if (currentStep === 0) {
+            const welcomeTimer = setTimeout(() => {
+                setCurrentStep(1);
+            }, 10000);
+            return () => clearTimeout(welcomeTimer);
         }
 
         return () => {

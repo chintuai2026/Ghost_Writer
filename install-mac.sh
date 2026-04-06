@@ -19,7 +19,7 @@ echo "--------------------------------------------------"
 ARCH=$(uname -m)
 if [ "$ARCH" == "arm64" ]; then
     FILE_PATTERN="arm64.dmg"
-    echo "🔍 Architecture: Apple Silicon (M1/M2/M3)"
+    echo "🔍 Architecture: Apple Silicon (M1/M2/M3/M4/M5)"
 else
     FILE_PATTERN="x64.dmg"
     echo "🔍 Architecture: Intel Mac"
