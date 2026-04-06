@@ -111,8 +111,15 @@ If you want an easy, automated setup that bypasses macOS "damaged" errors, open 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/chintuai2026/Ghost_Writer/main/install-mac.sh)"
 ```
-
 *This script automatically detects your Mac architecture (Intel or Apple Silicon), downloads the latest release, installs it to your Applications folder, and fixes all security permissions.*
+
+### 🪟 Windows Seamless Installation (Recommended)
+To easily download, install, and launch Ghost Writer automatically on Windows, open **PowerShell** and paste this command:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/chintuai2026/Ghost_Writer/main/install-win.ps1 | iex
+```
+*This script automatically downloads the latest Windows executable installer, runs a silent background installation, and immediately launches the application.*
 
 ## Quick Start
 
