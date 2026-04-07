@@ -148,7 +148,7 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
 
     // Sync transcript setting and meeting mode
     useEffect(() => {
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && window.electronAPI) {
             const stored = localStorage.getItem('ghost_writer_interviewer_transcript');
             setShowTranscript(stored !== 'false');
 
@@ -157,6 +157,16 @@ const GhostWriterInterface: React.FC<GhostWriterInterfaceProps> = ({ onEndMeetin
                     setIsMeetingMode(true);
                 }
             }).catch(console.error);
+
+            // Listen for real-time mode changes from other windows
+            const unsubscribe = window.electronAPI.onMeetingModeChanged?.((data: { isMeetingMode: boolean }) => {
+                console.log(`[GhostWriterInterface] Meeting mode changed to: ${data.isMeetingMode}`);
+                setIsMeetingMode(data.isMeetingMode);
+            });
+
+            return () => {
+                if (unsubscribe) unsubscribe();
+            };
         }
     }, []);
 

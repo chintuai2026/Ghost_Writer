@@ -291,15 +291,6 @@ export function initializeIpcHandlers(appState: AppState): void {
     return { resumeText, jdText, projectText, agendaText, isMeetingMode };
   });
 
-  safeIpcHandle("set-meeting-mode", async (event, isMeeting: boolean) => {
-    appState.credentialsManager.setIsMeetingMode(isMeeting);
-    return { success: true };
-  });
-
-  safeIpcHandle("get-meeting-mode", async () => {
-    return appState.credentialsManager.getIsMeetingMode();
-  });
-
   safeIpcHandle("clear-resume", async () => {
     appState.contextManager.clearResume();
     return { success: true };

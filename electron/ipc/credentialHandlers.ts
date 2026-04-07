@@ -453,6 +453,13 @@ export function registerCredentialHandlers(appState: AppState): void {
     try {
       const { CredentialsManager } = require('../services/CredentialsManager');
       CredentialsManager.getInstance().setIsMeetingMode(isMeeting);
+      
+      // Update IntelligenceManager if needed (e.g. for prompt switching)
+      // appState.getIntelligenceManager().initializeLLMs();
+      
+      // Broadcast to all windows so UI labels (Person 1 vs Interviewer) update
+      broadcastToWindows('meeting-mode-changed', { isMeetingMode: isMeeting });
+      
       return { success: true };
     } catch (error: any) {
       console.error("Error setting meeting mode:", error);

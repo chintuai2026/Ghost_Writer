@@ -105,7 +105,7 @@ interface ElectronAPI {
   stopAudioTest: () => Promise<{ success: boolean }>
   onAudioLevel: (callback: (level: number) => void) => () => void
   setRecognitionLanguage: (key: string) => Promise<{ success: boolean; error?: string }>
-  onSessionReset: (callback: () => void) => () => void
+  onMeetingModeChanged: (callback: (data: { isMeetingMode: boolean }) => void) => () => void
   onAudioCaptureFallback: (callback: (data: { reason: string }) => void) => () => void
   sendRawAudio: (data: Buffer) => void
 
@@ -674,6 +674,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("session-reset", subscription)
     return () => {
       ipcRenderer.removeListener("session-reset", subscription)
+    }
+  },
+  onMeetingModeChanged: (callback: (data: { isMeetingMode: boolean }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("meeting-mode-changed", subscription)
+    return () => {
+      ipcRenderer.removeListener("meeting-mode-changed", subscription)
     }
   },
   onAudioCaptureFallback: (callback: (data: { reason: string }) => void) => {

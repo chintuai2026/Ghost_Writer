@@ -144,7 +144,12 @@ export class WindowHelper {
 
     try {
       this.launcherWindow = new BrowserWindow(launcherSettings)
-      // Quick answer
+      
+      // macOS: Allow window to stay visible above full-screen apps and follow across Spaces
+      if (isMac) {
+        this.launcherWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        this.launcherWindow.setAlwaysOnTop(true, "floating");
+      }
     } catch (err) {
       console.error('[WindowHelper] Failed to create BrowserWindow:', err);
       return;
@@ -188,6 +193,11 @@ export class WindowHelper {
 
     this.overlayWindow = new BrowserWindow(overlaySettings)
     // Content protection disabled by default (must be visible during screen share)
+
+    // macOS: Allow window to stay visible above full-screen apps and follow across Spaces
+    if (process.platform === "darwin") {
+      this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
 
     // Windows: use 'screen-saver' level to stay above fullscreen apps and screen-sharing tools
     this.overlayWindow.setAlwaysOnTop(true, "screen-saver")

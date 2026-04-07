@@ -138,6 +138,11 @@ export class SettingsWindowHelper {
         }
 
         this.settingsWindow = new BrowserWindow(windowSettings)
+        
+        // macOS: Allow window to stay visible above full-screen apps and follow across Spaces
+        if (process.platform === "darwin") {
+            this.settingsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        }
 
         // Windows: use 'screen-saver' level to stay above everything
         this.settingsWindow.setAlwaysOnTop(true, "screen-saver")
