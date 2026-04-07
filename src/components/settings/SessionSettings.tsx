@@ -383,18 +383,6 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({ mode }) => {
                     </div>
                 </section>
             </div>
-
-            {/* Bottom Save Button */}
-            <div className="flex justify-center pt-6 pb-12">
-                <button
-                    onClick={handleGlobalSave}
-                    disabled={saving}
-                    className="px-10 py-4 bg-accent-primary hover:bg-accent-secondary text-bg-primary rounded-2xl text-sm font-black transition-all shadow-[0_8px_30px_rgba(0,242,255,0.4)] flex items-center gap-3 disabled:opacity-50 active:scale-95 group"
-                >
-                    {saving ? <RotateCcw size={20} className="animate-spin" /> : <Save size={20} className="group-hover:scale-110 transition-transform" />}
-                    SAVE ALL CHANGES
-                </button>
-            </div>
         </div>
     );
 };
