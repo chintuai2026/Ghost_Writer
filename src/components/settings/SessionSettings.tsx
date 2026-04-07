@@ -65,18 +65,33 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({ mode }) => {
         }
     };
 
-    const handleSavePrompt = async () => {
+    const handleGlobalSave = async () => {
         try {
             setSaving(true);
-            const result = await window.electronAPI.setCustomPrompt(mode, prompt);
+            
+            const savePromises = [
+                window.electronAPI.setCustomPrompt(mode, prompt)
+            ];
 
-            if (result.success) {
-                showStatus('success', `${isInterview ? 'Interview' : 'Meeting'} prompt saved!`);
+            if (isInterview) {
+                savePromises.push(window.electronAPI.saveResumeText(contextFile1));
+                savePromises.push(window.electronAPI.saveJDText(contextFile2));
             } else {
-                showStatus('error', `Failed to save prompt: ${result.error}`);
+                savePromises.push(window.electronAPI.saveProjectText(contextFile1));
+                savePromises.push(window.electronAPI.saveAgendaText(contextFile2));
+            }
+
+            const results = await Promise.all(savePromises);
+            const allSuccess = results.every(r => r.success);
+
+            if (allSuccess) {
+                showStatus('success', `All ${isInterview ? 'Interview' : 'Meeting'} settings saved!`);
+            } else {
+                const errors = results.filter(r => !r.success).map(r => r.error).join(', ');
+                showStatus('error', `Save failed: ${errors}`);
             }
         } catch (error) {
-            showStatus('error', `Error saving prompt: ${error}`);
+            showStatus('error', `Error during save: ${error}`);
         } finally {
             setSaving(false);
         }
@@ -143,34 +158,6 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({ mode }) => {
         }
     };
 
-    const handleSaveContextText = async (type: 'file1' | 'file2') => {
-        try {
-            setLoading(true);
-            let result;
-            if (type === 'file1') {
-                result = isInterview
-                    ? await window.electronAPI.saveResumeText(contextFile1)
-                    : await window.electronAPI.saveProjectText(contextFile1);
-            } else {
-                result = isInterview
-                    ? await window.electronAPI.saveJDText(contextFile2)
-                    : await window.electronAPI.saveAgendaText(contextFile2);
-            }
-
-            if (result.success) {
-                const label = type === 'file1'
-                    ? (isInterview ? 'Resume' : 'Project Documentation')
-                    : (isInterview ? 'Job Description' : 'Agenda');
-                showStatus('success', `${label} text saved!`);
-            } else {
-                showStatus('error', `Failed to save: ${result.error}`);
-            }
-        } catch (error) {
-            showStatus('error', `Error saving text: ${error}`);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleClearContext = async (type: 'file1' | 'file2') => {
         const label = type === 'file1'
@@ -267,7 +254,7 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({ mode }) => {
                             <MessageSquare size={14} /> Use Default
                         </button>
                         <button
-                            onClick={handleSavePrompt}
+                            onClick={handleGlobalSave}
                             disabled={saving}
                             className="px-6 py-2 bg-accent-primary hover:bg-accent-secondary text-bg-primary rounded-xl text-xs font-black transition-all shadow-[0_4px_20px_rgba(0,242,255,0.3)] flex items-center gap-2 disabled:opacity-50"
                         >
@@ -344,13 +331,6 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({ mode }) => {
                             placeholder={isInterview ? "Paste resume text here..." : "Paste project documentation here..."}
                             className="w-full h-56 bg-bg-input border border-border-subtle rounded-2xl p-6 text-xs font-mono text-text-primary focus:ring-2 focus:ring-accent-primary/20 focus:border-accent-primary/50 outline-none resize-none transition-all scrollbar-thin"
                         />
-                        <button
-                            onClick={() => handleSaveContextText('file1')}
-                            className="absolute bottom-4 right-4 p-2.5 bg-accent-primary hover:bg-accent-secondary text-bg-primary rounded-xl shadow-[0_4px_15px_rgba(0,242,255,0.3)] transition-all"
-                            title="Save Content"
-                        >
-                            <Save size={16} />
-                        </button>
                     </div>
                 </section>
 
@@ -398,15 +378,20 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({ mode }) => {
                             placeholder={isInterview ? "Paste job description here..." : "Paste agenda here..."}
                             className="w-full h-56 bg-bg-input border border-border-subtle rounded-2xl p-6 text-xs font-mono text-text-primary focus:ring-2 focus:ring-accent-primary/20 focus:border-accent-primary/50 outline-none resize-none transition-all scrollbar-thin"
                         />
-                        <button
-                            onClick={() => handleSaveContextText('file2')}
-                            className="absolute bottom-4 right-4 p-2.5 bg-accent-primary hover:bg-accent-secondary text-bg-primary rounded-xl shadow-[0_4px_15px_rgba(0,242,255,0.3)] transition-all"
-                            title="Save Content"
-                        >
-                            <Save size={16} />
-                        </button>
                     </div>
                 </section>
+            </div>
+
+            {/* Bottom Save Button */}
+            <div className="flex justify-center pt-6 pb-12">
+                <button
+                    onClick={handleGlobalSave}
+                    disabled={saving}
+                    className="px-10 py-4 bg-accent-primary hover:bg-accent-secondary text-bg-primary rounded-2xl text-sm font-black transition-all shadow-[0_8px_30px_rgba(0,242,255,0.4)] flex items-center gap-3 disabled:opacity-50 active:scale-95 group"
+                >
+                    {saving ? <RotateCcw size={20} className="animate-spin" /> : <Save size={20} className="group-hover:scale-110 transition-transform" />}
+                    SAVE ALL CHANGES
+                </button>
             </div>
         </div>
     );
