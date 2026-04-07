@@ -17,19 +17,18 @@ const OLLAMA_VISION_MODEL_HINTS = [
     'minicpm-v',
     'moondream',
     'qwen2-vl',
+    'qwen2.5-vl',
     'qwen3-vl',
-    'qwen3.5',
-    'minimax',
-    'kimi',
-    'glm',
-    'medllama',
-    'gemini',
+    'paligemma',
+    'bakllava',
     'vl',
-    'vision'
+    'vision',
+    'multimodal'
 ];
 
 export function isLikelyVisionModelName(modelName: string): boolean {
     const lower = modelName.toLowerCase();
+    // Check for explicit vision hints first
     return OLLAMA_VISION_MODEL_HINTS.some(hint => lower.includes(hint));
 }
 

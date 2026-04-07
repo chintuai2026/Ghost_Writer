@@ -277,6 +277,10 @@ export class WindowHelper {
     } else {
       this.switchToLauncher();
     }
+
+    if (process.platform === 'darwin') {
+      app.focus({ steal: true });
+    }
   }
 
   public toggleMainWindow(): void {

@@ -146,6 +146,7 @@ interface ElectronAPI {
   onIntelligenceManualResult: (callback: (data: { answer: string; question: string }) => void) => () => void
   onIntelligenceModeChanged: (callback: (data: { mode: string }) => void) => () => void
   onIntelligenceError: (callback: (data: { error: string; mode: string }) => void) => () => void
+  onVisionFallback: (callback: (data: { primaryModel: string; proxyProvider: string }) => void) => () => void
   onLicenseStatusUpdated: (callback: (state: any) => void) => () => void
 
   invoke: (channel: string, ...args: any[]) => Promise<any>
@@ -652,6 +653,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("intelligence-error", subscription)
     return () => {
       ipcRenderer.removeListener("intelligence-error", subscription)
+    }
+  },
+  onVisionFallback: (callback: (data: any) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("vision-fallback-triggered", subscription)
+    return () => {
+      ipcRenderer.removeListener("vision-fallback-triggered", subscription)
     }
   },
   onLicenseStatusUpdated: (callback: (state: any) => void) => {

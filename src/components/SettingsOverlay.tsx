@@ -213,6 +213,11 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
     const [gpuInfo, setGpuInfo] = useState<{ name: string; vramGB: number; isNvidia: boolean; tier: string } | null>(null);
     const [audioFallbackActive, setAudioFallbackActive] = useState(false);
     const [showStealthMatrix, setShowStealthMatrix] = useState(false);
+    const [showNotification, setShowNotification] = useState(false);
+    const [notificationConfig, setNotificationConfig] = useState<{ title: string, sub: string }>({
+        title: 'Settings Saved',
+        sub: 'Changes applied successfully'
+    });
     const themeDropdownRef = React.useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
@@ -240,6 +245,20 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
             const unsubscribe = window.electronAPI.onAudioCaptureFallback((data: { reason: string }) => {
                 console.warn('[Settings] Native audio fallback triggered:', data.reason);
                 setAudioFallbackActive(true);
+            });
+            return () => unsubscribe();
+        }
+    }, []);
+
+    useEffect(() => {
+        if (window.electronAPI?.onVisionFallback) {
+            const unsubscribe = window.electronAPI.onVisionFallback((data: any) => {
+                setNotificationConfig({
+                    title: 'Vision Fallback Active',
+                    sub: `Using ${data.proxyProvider} for screenshot analysis`
+                });
+                setShowNotification(true);
+                setTimeout(() => setShowNotification(false), 5000);
             });
             return () => unsubscribe();
         }
@@ -907,7 +926,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                         </div>
                                                         <p className="text-xs text-text-secondary">
                                                             {isUndetectable
-                                                                ? 'Content protection and process disguise are active.'
+                                                                ? 'Content protection and process disguise are active. Use Cmd+Shift+Space to reveal Ghost Writer.'
                                                                 : 'Ghost Writer is visible to screen-sharing and recordings.'}
                                                             <button
                                                                 onClick={() => setShowStealthMatrix(!showStealthMatrix)}
@@ -924,6 +943,22 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                             window.electronAPI?.setUndetectable(newState);
                                                             // Analytics: Undetectable Mode Toggle
                                                             analytics.trackModeSelected(newState ? 'undetectable' : 'overlay');
+
+                                                            if (newState) {
+                                                                setNotificationConfig({
+                                                                    title: 'Stealth Mode Active',
+                                                                    sub: 'Press Cmd+Shift+Space to reveal'
+                                                                });
+                                                                setShowNotification(true);
+                                                                setTimeout(() => setShowNotification(false), 6000);
+                                                            } else {
+                                                                setNotificationConfig({
+                                                                    title: 'Visible Mode',
+                                                                    sub: 'Ghost Writer is now visible'
+                                                                });
+                                                                setShowNotification(true);
+                                                                setTimeout(() => setShowNotification(false), 3000);
+                                                            }
                                                         }}
                                                         className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${isUndetectable ? 'bg-accent-primary' : 'bg-bg-toggle-switch border border-border-muted'}`}
                                                     >
@@ -2072,6 +2107,27 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                 )}
                             </div>
                         </div>
+
+                        {/* Notification Toast - Universal Style */}
+                        <AnimatePresence>
+                            {showNotification && (
+                                <motion.div
+                                    initial={{ y: 50, opacity: 0, scale: 0.9 }}
+                                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                                    exit={{ y: 50, opacity: 0, scale: 0.9 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                    className="fixed bottom-10 right-10 z-[2000] flex items-center gap-4 pl-4 pr-6 py-4 rounded-2xl bg-white/10 backdrop-blur-3xl border border-white/20 shadow-2xl saturate-[180%]"
+                                >
+                                    <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-white text-black shadow-2xl">
+                                        <Ghost size={16} />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[12px] font-black text-text-primary uppercase tracking-[0.2em]">{notificationConfig.title}</span>
+                                        <span className="text-[9px] text-text-tertiary font-bold uppercase tracking-widest opacity-60">{notificationConfig.sub}</span>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </motion.div>
                 </motion.div>
             )}

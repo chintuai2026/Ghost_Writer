@@ -203,6 +203,10 @@ export class IntelligenceManager extends EventEmitter {
             this.emit('active-model', info);
         });
 
+        this.llmHelper.on('vision-fallback', (info) => {
+            this.emit('vision-fallback', info);
+        });
+
     }
 
 

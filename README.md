@@ -167,20 +167,34 @@ flowchart LR
 
 ## Recommended Setup
 
-### Fastest text-first setup
+### ☁️ Cloud Intelligence (Low Latency)
+For the fastest setup and lowest-latency responses, we recommend:
 
-- STT: local Whisper or Deepgram
-- LLM: Gemini Flash, Groq, or other low-latency cloud model
+- **MiniMax M2**: Currently one of the fastest models available. Perfect for real-time interview suggestions.
+- **Gemini 1.5 Flash**: Excellent balance of speed and multimodal capability. (Free Tier available)
+- **Groq (Llama 3.3)**: Near-instant text processing. (Free Tier available)
 
-### Best local-first setup
+### 🏠 Local Intelligence (Privacy & Performance)
+For maximum privacy, use [Ollama](https://ollama.com) with these top picks:
 
-- STT: local Whisper
-- LLM: Ollama
+1.  **`llama3.2-vision`**: The best all-rounder for text and images.
+2.  **`phi4`**: Microsoft's compact powerhouse for deep reasoning.
+3.  **`qwen2.5-coder`**: The gold standard for technical and coding interviews.
+4.  **`moondream`**: Ultra-fast vision model for low-resource hardware.
 
-### Best multimodal interview setup
+### 🛡️ Smart Vision Fallback
+Ghost Writer includes a **Vision-to-Text Fallback** system that gives you the best of both worlds:
+- **Speed**: Use lightning-fast text models like **MiniMax M2** or **Groq** for your primary reasoning.
+- **Vision**: When you attach a screenshot, Ghost Writer automatically finds an available multimodal provider (**Gemini**, **GPT-4o**, **Claude**, or a local **LLaVA/Qwen-VL** model) to describe the visual context.
+- **Hybrid Performance**: This "Double Model" approach is often superior to using a single multimodal model, as it pairs specialized image analysis with specialized interview reasoning.
 
-- Use a vision-capable model for screenshot answering
-- Attach screenshots with `Ctrl/Cmd+H`
+> **Tip**: Use **Local Whisper** for transcription to keep your entire meeting data strictly private and on-device.
+
+---
+
+### Best Multimodal Setup
+- Use a vision-capable model (like `llama3.2-vision` or `Gemini Flash`) for screenshot-aware answering.
+- Attach screenshots instantly with `Ctrl/Cmd+H`.
 
 ## Keyboard Shortcuts
 

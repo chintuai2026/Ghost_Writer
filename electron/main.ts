@@ -947,6 +947,12 @@ export class AppState {
       }
     })
 
+    this.intelligenceManager.on('vision-fallback', (info: any) => {
+      const helper = this.getWindowHelper();
+      helper.getLauncherWindow()?.webContents.send('vision-fallback-triggered', info);
+      helper.getOverlayWindow()?.webContents.send('vision-fallback-triggered', info);
+    })
+
     this.intelligenceManager.on('model-status', (info) => {
       const win = mainWindow()
       if (win) {
@@ -1339,6 +1345,14 @@ export class AppState {
       }
       this.hideTray();
       this._applyDisguise(this.disguiseMode);
+      
+      // Ensure the window remains visible and focused after the dock/tray change
+      setTimeout(() => {
+        this.windowHelper.showMainWindow();
+        if (process.platform === 'darwin') {
+          app.focus({ steal: true });
+        }
+      }, 100);
     } else {
       if (process.platform === 'darwin') {
         app.dock?.show();

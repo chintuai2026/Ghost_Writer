@@ -390,7 +390,26 @@ export class LLMHelper extends EventEmitter {
     return `${systemPrompt ?? ""}${screenshotRule}`.trim();
   }
 
+  private isVisionCapable(modelId: string, provider: string): boolean {
+    if (provider === 'gemini') return true;
+    if (provider === 'openai') {
+      const lower = modelId.toLowerCase();
+      return lower.includes('gpt-4') || lower.includes('o1') || lower.includes('vision');
+    }
+    if (provider === 'claude') return true;
+    if (provider === 'ollama') {
+      const { isLikelyVisionModelName } = require('./llm/providers/OllamaProvider');
+      return isLikelyVisionModelName(modelId);
+    }
+    // Groq, NVIDIA, DeepSeek (current models) are generally text-only or we treat them as such for safety
+    return false;
+  }
+
   private async preparePayload(payload: ChatPayload): Promise<PreparedChatPayload> {
+    const currentModel = this.getCurrentModel();
+    const currentProvider = this.getCurrentProvider();
+    const isVisionCapable = this.isVisionCapable(currentModel, currentProvider);
+
     const normalizedPayload: ChatPayload = {
       ...payload,
       message: payload.message,
@@ -417,6 +436,38 @@ export class LLMHelper extends EventEmitter {
       };
     }
 
+    // --- VISION FALLBACK LOGIC ---
+    // If the model is NOT vision-capable, we must generate a description using a vision proxy.
+    // We explicitly exclude the current model to avoid any recursion if it's the one that triggered this.
+    let visionDescription = "";
+    let proxyModelUsed = "";
+    if (!isVisionCapable) {
+      console.log(`[LLMHelper] Selected model ${currentModel} on ${currentProvider} is NOT vision-capable. Running Vision-to-Text fallback...`);
+      try {
+        // analyzeImageFile will use the first available multimodal provider (Gemini, GPT-4o, Claude, etc.)
+        const analysis = await this.analyzeImageFile(payload.imagePath);
+        visionDescription = analysis.text;
+        
+        if (!visionDescription || visionDescription.includes("requires a configured multimodal provider")) {
+          console.warn("[LLMHelper] Vision fallback could not find a capable provider.");
+          visionDescription = ""; // Clear it so we don't inject error messages as context
+        } else {
+          console.log(`[LLMHelper] Vision fallback complete. Description length: ${visionDescription.length}`);
+          // Attempt to detect which proxy was used (for UI notification)
+          proxyModelUsed = "Vision Proxy"; // Default
+          if (visionDescription.length > 0) {
+            this.emit('vision-fallback', { 
+               primaryModel: currentModel, 
+               proxyProvider: "Vision Assistant",
+               timestamp: Date.now() 
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[LLMHelper] Vision fallback failed:", err);
+      }
+    }
+
     try {
       const multimodal = MultimodalHelper.getInstance();
       const processed = await multimodal.prepareImage(payload.imagePath, { runOCR: true });
@@ -429,17 +480,35 @@ export class LLMHelper extends EventEmitter {
         `[LLMHelper] Prepared image ${path.basename(payload.imagePath)} -> ${path.basename(processed.processedPath)} (ocr=${processed.metadata.usedOCR}, size=${processed.metadata.processedSize})`
       );
 
+      // Construct final message with OCR and optional Vision Description
+      let finalMessage = this.buildMessageWithOCR(payload.message, processed.ocrText);
+      if (visionDescription) {
+        finalMessage = `[VISUAL CONTEXT FROM SCREENSHOT]:\n${visionDescription}\n\n${finalMessage}`;
+      }
+
       return {
         payload: {
           ...normalizedPayload,
-          imagePath: processed.processedPath,
-          message: this.buildMessageWithOCR(payload.message, processed.ocrText),
+          imagePath: isVisionCapable ? processed.processedPath : undefined, // Strip image if not capable
+          message: finalMessage,
         },
         cleanupPaths,
       };
     } catch (error) {
       console.warn("[LLMHelper] Image preprocessing failed, using original image:", error);
-      return { payload: normalizedPayload, cleanupPaths: [] };
+      // Even if preprocessing fails, we can still use the vision description if we have it
+      const finalMessage = visionDescription 
+        ? `[VISUAL CONTEXT FROM SCREENSHOT]:\n${visionDescription}\n\n${payload.message}`
+        : payload.message;
+
+      return { 
+        payload: {
+          ...normalizedPayload,
+          imagePath: isVisionCapable ? payload.imagePath : undefined,
+          message: finalMessage
+        }, 
+        cleanupPaths: [] 
+      };
     }
   }
 

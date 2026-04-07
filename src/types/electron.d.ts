@@ -130,6 +130,7 @@ export interface ElectronAPI {
   onIntelligenceManualResult: (callback: (data: { answer: string; question: string }) => void) => () => void
   onIntelligenceModeChanged: (callback: (data: { mode: string }) => void) => () => void
   onIntelligenceError: (callback: (data: { error: string, mode: string }) => void) => () => void;
+  onVisionFallback: (callback: (data: { primaryModel: string; proxyProvider: string }) => void) => () => void;
   // Session Management
   onSessionReset: (callback: () => void) => () => void;
 

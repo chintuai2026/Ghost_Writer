@@ -160,6 +160,19 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
             });
         }
 
+        // Listen for vision fallback
+        let removeVisionFallbackListener: (() => void) | undefined;
+        if (window.electronAPI?.onVisionFallback) {
+            removeVisionFallbackListener = window.electronAPI.onVisionFallback((data: any) => {
+                setNotificationConfig({
+                    title: 'Vision Fallback',
+                    sub: `Using ${data.proxyProvider} proxy...`
+                });
+                setShowNotification(true);
+                setTimeout(() => setShowNotification(false), 5000);
+            });
+        }
+
         // fetchEvents();
 
         // Listen for background updates (e.g. after meeting processing finishes)
@@ -228,8 +241,25 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings, onR
     const toggleDetectable = () => {
         const newState = !isDetectable;
         setIsDetectable(newState);
-        window.electronAPI?.setUndetectable(!newState); // Note: setUndetectable takes the *undetectable* state, which is inverse of *detectable*
-        analytics.trackModeSelected(newState ? 'launcher' : 'undetectable'); // If visible (detectable), mode is normal/launcher. If not detectable, mode is undetectable.
+        const isUndetectable = !newState;
+        window.electronAPI?.setUndetectable(isUndetectable); 
+        analytics.trackModeSelected(newState ? 'launcher' : 'undetectable');
+
+        if (isUndetectable) {
+            setNotificationConfig({
+                title: 'Stealth Mode Active',
+                sub: 'Press Command+Shift+Space to reveal'
+            });
+            setShowNotification(true);
+            setTimeout(() => setShowNotification(false), 6000);
+        } else {
+            setNotificationConfig({
+                title: 'Visible Mode',
+                sub: 'Ghost Writer is now visible'
+            });
+            setShowNotification(true);
+            setTimeout(() => setShowNotification(false), 3000);
+        }
     };
 
     // Group meetings
